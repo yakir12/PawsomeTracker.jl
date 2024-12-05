@@ -1,7 +1,7 @@
 name = "PawsomeTracker"
 uuid = "d3f98fa6-545d-4d4c-aa39-0a9eb18c40ca"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
-version = "1.0.0-DEV"
+version = "1.0.1"
 
 [deps]
 ImageFiltering = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
@@ -13,7 +13,6 @@ VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [compat]
 ImageFiltering = "0.7.9"
-LinearAlgebra = "1.11.0"
 OffsetArrays = "1.14.1"
 PaddedViews = "0.5.12"
 StatsBase = "0.34.3"
