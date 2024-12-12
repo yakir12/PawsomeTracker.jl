@@ -52,7 +52,7 @@ Returns a vector with the time-stamps per frame, and a vector of (x, y) tuples f
 function track(file::AbstractString; 
         start::Real = 0,
         stop::Real = VideoIO.get_duration(file),
-        target_width::Int = 25,
+        target_width::Real = 25,
         start_xy::Union{Missing, NTuple{2, Int}} = missing,
         window_size::NTuple{2, Int} = guess_window_size(target_width)
     )
