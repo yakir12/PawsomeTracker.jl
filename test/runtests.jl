@@ -1,5 +1,6 @@
 using PawsomeTracker
 using Test
+using Aqua
 
 using LinearAlgebra, Statistics
 using VideoIO, ImageDraw, ColorTypes, FixedPointNumbers, OhMyThreads
@@ -38,12 +39,17 @@ compare() = mktempdir() do path
     sqrt(mean([LinearAlgebra.norm_sqr(o .- reverse(t)) for (o, t) in zip(org, tracked)]))
 end
 
-@testset "multiple random trajectories" begin
-    for _ in 1:10
-        @test compare() < 1
+@testset "PawsomeTracker.jl" begin
+    @testset "Code quality (Aqua.jl)" begin
+        Aqua.test_all(PawsomeTracker)
     end
-end
+    @testset "multiple random trajectories" begin
+        for _ in 1:10
+            @test compare() < 1
+        end
+    end
 
-@testset "multiple random concurrent trajectories" begin
-    @test all(<(1), tcollect(compare() for _ in 1:10))
+    @testset "multiple random concurrent trajectories" begin
+        @test all(<(1), tcollect(compare() for _ in 1:10))
+    end
 end
