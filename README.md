@@ -1,6 +1,8 @@
 # PawsomeTracker
 
 [![Build Status](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Coverage](https://codecov.io/gh/yakir12/PawsomeTracker.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/PawsomeTracker.jl)
+[![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
 Use a Difference of Gaussian (DoG) filter to track a target in a video file.
 
@@ -16,3 +18,7 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video file.
 - `window_size`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will in to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
 
 Returns a vector with the time-stamps per frame, and a vector of (x, y) tuples for the detection per frame.
+
+## Citing
+
+See [`CITATION.bib`](CITATION.bib) for the relevant reference(s).
