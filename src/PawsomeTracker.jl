@@ -1,7 +1,14 @@
 module PawsomeTracker
 
-using LinearAlgebra
-using VideoIO, OffsetArrays, ImageFiltering, PaddedViews, StatsBase
+# using LinearAlgebra
+# using VideoIO, OffsetArrays, ImageFiltering, PaddedViews, StatsBase
+
+using ImageFiltering: ImageFiltering, Kernel, imfilter
+using LinearAlgebra: LinearAlgebra
+using OffsetArrays: OffsetArrays
+using PaddedViews: PaddedViews, PaddedView
+using StatsBase: StatsBase, mode
+using VideoIO: VideoIO, gettime, openvideo, out_frame_size, read, read!
 
 export track
 
