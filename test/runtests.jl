@@ -3,7 +3,7 @@ using Test
 using Aqua
 
 using LinearAlgebra, Statistics
-using VideoIO, ImageDraw, ColorTypes, FixedPointNumbers, OhMyThreads
+using VideoIO, ImageDraw, ColorTypes, FixedPointNumbers
 
 function generate(w, h, target_width, start_ij, file)
     framerate = 24
@@ -11,7 +11,7 @@ function generate(w, h, target_width, start_ij, file)
     n = s*framerate # number of total frames
 
     a = 30/n # controls how tight the spiral is
-    org = accumulate(range(0, 10π, n); init = start_ij) do ij, θ
+    org = accumulate(range(0, 10π, length = n); init = start_ij) do ij, θ
         cs = cis(θ + randn()/10)
         r = a*θ + randn()/10
         xy = cs * r
@@ -41,7 +41,7 @@ end
 
 @testset "PawsomeTracker.jl" begin
     @testset "Code quality (Aqua.jl)" begin
-        Aqua.test_all(PawsomeTracker)
+        Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
     @testset "multiple random trajectories" begin
         for _ in 1:10
@@ -50,6 +50,8 @@ end
     end
 
     @testset "multiple random concurrent trajectories" begin
-        @test all(<(1), tcollect(compare() for _ in 1:10))
+        Threads.@threads for _ in 1:10
+            @test compare() < 1
+        end
     end
 end
