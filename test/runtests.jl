@@ -59,26 +59,26 @@ end
         Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
     @testset "multiple random trajectories" begin
-        for _ in 1:100
+        for _ in 1:80
             @test compare() < 1
         end
     end
 
     @testset "video with aspect ration ≠ 1" begin
-        for _ in 1:10
+        for _ in 1:80
             @test compare_aspect() < 2
         end
     end
 
     @testset "concurrency" begin
         @testset "multiple random trajectories" begin
-            Threads.@threads for _ in 1:10
+            Threads.@threads for _ in 1:80
                 @test compare() < 1
             end
         end
 
         @testset "video with aspect ration ≠ 1" begin
-            Threads.@threads for _ in 1:10
+            Threads.@threads for _ in 1:80
                 @test compare_aspect() < 2
             end
         end

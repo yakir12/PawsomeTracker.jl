@@ -101,9 +101,9 @@ function _track(vid, start, stop, target_width, start_xy, window_size)
         end
     end
 
-    xys = [(round(Int, j * VideoIO.aspect_ratio(vid)), i) for (i, j) in indices]
+    xys = [(j * VideoIO.aspect_ratio(vid), i) for (i, j) in indices]
 
-    return ts .- t₀, indices, xys
+    return ts .- t₀, CartesianIndex.(indices), xys
 end
 
 end
