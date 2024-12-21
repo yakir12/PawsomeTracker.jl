@@ -33,7 +33,8 @@ compare() = mktempdir() do path
     start_ij = (rand(h ÷ 4 + 1 : 3h ÷ 4 - 1), rand(w ÷ 4 + 1 : 3w ÷ 4 - 1))
     target_width = rand(5:20)
     org = generate(w, h, target_width, start_ij, file)
-    _, _, tracked = track(file)
+    start_xy = rand(Bool) ? reverse(start_ij) : missing
+    _, _, tracked = track(file; start_xy)
     sqrt(mean([LinearAlgebra.norm_sqr(o .- reverse(t)) for (o, t) in zip(org, tracked)]))
 end
 
@@ -58,7 +59,7 @@ end
         Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
     @testset "multiple random trajectories" begin
-        for _ in 1:10
+        for _ in 1:100
             @test compare() < 1
         end
     end
