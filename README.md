@@ -4,7 +4,7 @@
 [![Coverage](https://codecov.io/gh/yakir12/PawsomeTracker.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/PawsomeTracker.jl)
 [![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 
-Use a Difference of Gaussian (DoG) filter to track a target in a video file.
+Use a Difference of Gaussian (DoG) filter to track a target in a video file. Can deal with concurrency, pixel aspect ratios (i.e. SAR, DAR, etc) other than one, and missing starting location.
 
 ## Usage
 

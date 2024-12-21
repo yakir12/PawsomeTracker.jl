@@ -7,15 +7,13 @@ function generate(w, h, target_width, start_ij, file)
     framerate = 24
     s = 10 # 10 second long test-videos
     n = s*framerate # number of total frames
-
-    a = 30/n # controls how tight the spiral is
+    a = 20/n # controls how tight the spiral is
     org = accumulate(range(0, 10π, length = n); init = start_ij) do ij, θ
         cs = cis(θ + randn()/10)
         r = a*θ + randn()/10
         xy = cs * r
         ij .+ round.(Int, (real(xy), imag(xy)))
     end
-
     blank = ones(Gray{N0f8}, h, w)
     open_video_out(file, eltype(blank), (h, w), framerate=framerate) do writer
         for ij in org
@@ -23,7 +21,6 @@ function generate(w, h, target_width, start_ij, file)
             write(writer, frame)
         end
     end
-
     return org
 end
 
@@ -60,6 +57,7 @@ compare() = mktempdir() do path
         end
     target_width = rand(5:20)
     org = generate(w, h, target_width, start_ij, file)
+
     file2 = joinpath(path, "example2.mkv")
     w2 = w ÷ aspect
     run(`$(FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -i $file -vf scale=$w2:$h,setsar=$aspect -c:v libx264 $file2`)
@@ -111,8 +109,13 @@ end
 
     @testset "concurrency" begin
         @testset "random trajectories" begin
-            Threads.@threads for _ in 1:80
-                @test compare() < 2
+            n = 80
+            rs = zeros(n)
+            Threads.@threads for i in 1:n
+                rs[i] = compare()
+            end
+            for r in rs
+                @test r < 2
             end
         end
     end
