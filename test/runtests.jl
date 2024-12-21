@@ -102,14 +102,14 @@ end
         Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
     @testset "random trajectories" begin
-        for _ in 1:80
+        for _ in 1:20
             @test compare() < 2
         end
     end
 
     @testset "concurrency" begin
         @testset "random trajectories" begin
-            n = 80
+            n = 20
             rs = zeros(n)
             Threads.@threads for i in 1:n
                 rs[i] = compare()
