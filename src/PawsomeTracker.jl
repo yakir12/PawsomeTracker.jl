@@ -27,7 +27,12 @@ function getwindow(window_size)
     return radii, window
 end
 
-initiate(vid, _, start_xy) = (reverse(out_frame_size(vid)), read(vid), reverse(start_xy))
+function initiate(vid, _, start_xy)
+    sz = reverse(out_frame_size(vid))
+    x, y = start_xy
+    start_ij = (y, round(Int, x / VideoIO.aspect_ratio(vid)))
+    return sz, read(vid), start_ij
+end
 
 function initiate(vid, kernel, ::Missing)
     sz = reverse(out_frame_size(vid))
@@ -54,7 +59,7 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
 - `start_xy`: a tuple (x, y) where x and y are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the center of the target at `start`. If `start_xy` is `missing`, the target will be detected in a large (half as large as the frame) window centered at the frame. Defaults to `missing`.
 - `window_size`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will in to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
 
-Returns a vector with the time-stamps per frame, and a vector of (x, y) tuples for the detection per frame.
+Returns a vector with the time-stamps per frame, a vector of (i, j) tuples for the detection index per frame, and a vector of (x, y) tuples. The latter is corrected if the pixel aspect ratio of the video is not equal to one.
 """
 function track(file::AbstractString; 
         start::Real = 0,
@@ -79,24 +84,26 @@ function _track(vid, start, stop, target_width, start_xy, window_size)
 
     sz, img, start_ij = initiate(vid, kernel, start_xy)
 
-    coords = [start_ij]
+    indices = [start_ij]
     ts = [gettime(vid)]
     wr, window = getwindow(reverse(window_size))
-    indices = UnitRange.(1 .- wr, sz .+ wr)
+    window_indices = UnitRange.(1 .- wr, sz .+ wr)
     fillvalue = mode(img)
-    pimg = PaddedView(fillvalue, img, indices)
+    pimg = PaddedView(fillvalue, img, window_indices)
 
     while !eof(vid)
         read!(vid, pimg.data)
-        guess = getnext(coords[end], pimg , window, kernel, sz)
-        push!(coords, guess)
+        guess = getnext(indices[end], pimg , window, kernel, sz)
+        push!(indices, guess)
         push!(ts, gettime(vid))
         if ts[end] ≥ stop
             break
         end
     end
 
-    return ts .- t₀, reverse.(coords)
+    xys = [(round(Int, j * VideoIO.aspect_ratio(vid)), i) for (i, j) in indices]
+
+    return ts .- t₀, indices, xys
 end
 
 end
