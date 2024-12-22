@@ -62,7 +62,7 @@ compare() = mktempdir() do path
     w2 = w ÷ aspect
     run(`$(FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -i $file -vf scale=$w2:$h,setsar=$aspect -c:v libx264 $file2`)
     # run(`$(FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -i $file -vf scale=$w2:$h,setdar=1:$a,setsar=1:$a -aspect 1:$a -c:v libx264 $file2`)
-    openvideo(VideoIO.aspect_ratio, file2)
+    @assert aspect == openvideo(VideoIO.aspect_ratio, file2)
     fix_start_location(x) = x
     function fix_start_location(ij::CartesianIndex{2})
         i, j = Tuple(ij)
