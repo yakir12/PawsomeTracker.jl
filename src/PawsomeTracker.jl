@@ -50,8 +50,8 @@ function initiate(vid, kernel, ::Missing)
 end
 
 function guess_window_size(target_width)
-    σ = target_width/2.355
-    l = 4ceil(Int, sqrt(2)*σ) + 1 # calculates the size of the DoG kernel
+    σ = target_width/2sqrt(log(2))
+    l = 4ceil(Int, σ) + 1 # calculates the size of the DoG kernel
     return (l, l)
 end
 
@@ -67,7 +67,7 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     2. `CartesianIndex{2}`: the Cartesian index (into the image matrix) indicating where the target is at `start`. Note that when the aspect ratio of the video is not equal to one, this Cartesian index should be to the raw, unscaled, image frame.
     3. `NTuple{2}`: (x, y) where x and y are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the target at `start`. Note that regardless of the aspect ratio of the video, this coordinate should be to the scaled image frame (what you'd see in a video player).
     Defaults to `missing`.
-- `window_size`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will in to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
+- `window_size`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will in to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to to a good minimal size that depends on the target width (see `guess_window_size` for details).
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
@@ -91,7 +91,7 @@ function _track(vid, start, stop, target_width, start_location, window_size, dar
     stop += t₀
     seek(vid, start)
 
-    σ = target_width/2.355
+    σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
     sz, img, start_ij = initiate(vid, kernel, start_location)
