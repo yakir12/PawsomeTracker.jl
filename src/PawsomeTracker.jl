@@ -50,8 +50,9 @@ function initiate(vid, kernel, ::Missing)
 end
 
 function guess_window_size(target_width)
-    h = round(Int, 1.5target_width)
-    return (h, h)
+    σ = target_width/2.355
+    l = 4ceil(Int, sqrt(2)*σ) + 1 # calculates the size of the DoG kernel
+    return (l, l)
 end
 
 """
@@ -63,25 +64,27 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
 - `target_width`: the full width of the target (diameter, not radius). It is used as the FWHM of the center Gaussian in the DoG filter. Arbitrarily defaults to 25 pixels.
 - `start_location`: one of three things:
     1. `missing`: the target will be detected in a large (half as large as the frame) window centered at the frame.
-    2. `CartesianIndex{2}`: the cartesian index (into the image matrix) indicating where the target is at `start`. Note that when the aspect ratio of the video is not equal to one, this cartesian index should be to the raw, un-scaled, image frame.
+    2. `CartesianIndex{2}`: the Cartesian index (into the image matrix) indicating where the target is at `start`. Note that when the aspect ratio of the video is not equal to one, this Cartesian index should be to the raw, unscaled, image frame.
     3. `NTuple{2}`: (x, y) where x and y are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the target at `start`. Note that regardless of the aspect ratio of the video, this coordinate should be to the scaled image frame (what you'd see in a video player).
     Defaults to `missing`.
 - `window_size`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will in to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. Defaults to 1.5 times the target width.
+- `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
 
-Returns a vector with the time-stamps per frame and a vector of cartesian indices for the detection index per frame.
+Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
 """
 function track(file::AbstractString; 
         start::Real = 0,
         stop::Real = VideoIO.get_duration(file),
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
-        window_size::NTuple{2, Int} = guess_window_size(target_width)
+        window_size::NTuple{2, Int} = guess_window_size(target_width),
+        darker_target::Bool = true
     )
 
-    openvideo(vid -> _track(vid, start, stop, target_width, start_location, window_size), file, target_format=VideoIO.AV_PIX_FMT_GRAY8)
+    openvideo(vid -> _track(vid, start, stop, target_width, start_location, window_size, darker_target), file, target_format=VideoIO.AV_PIX_FMT_GRAY8)
 end
 
-function _track(vid, start, stop, target_width, start_location, window_size)
+function _track(vid, start, stop, target_width, start_location, window_size, darker_target)
     read(vid) # needed to get the right time offset t₀
     t₀ = gettime(vid)
     start += t₀
@@ -89,7 +92,7 @@ function _track(vid, start, stop, target_width, start_location, window_size)
     seek(vid, start)
 
     σ = target_width/2.355
-    kernel = -Kernel.DoG(σ)
+    kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
     sz, img, start_ij = initiate(vid, kernel, start_location)
 

@@ -3,7 +3,7 @@ using Test
 using Aqua
 using ColorTypes, FFMPEG, FixedPointNumbers, ImageDraw, LinearAlgebra, Statistics, VideoIO
 
-function generate(w, h, target_width, start_ij, file)
+function generate(w, h, target_width, start_ij, file, darker_target)
     framerate = 24
     s = 10 # 10 second long test-videos
     n = s*framerate # number of total frames
@@ -14,10 +14,11 @@ function generate(w, h, target_width, start_ij, file)
         xy = cs * r
         ij .+ round.(Int, (real(xy), imag(xy)))
     end
-    blank = ones(Gray{N0f8}, h, w)
+    bkgd_c, target_c = darker_target ? (Gray{N0f8}(1), Gray{N0f8}(0)) : (Gray{N0f8}(0), Gray{N0f8}(1))
+    blank = fill(bkgd_c, h, w)
     open_video_out(file, eltype(blank), (h, w), framerate=framerate) do writer
         for ij in org
-            frame = draw(blank, CirclePointRadius(Point(CartesianIndex(ij)), target_width ÷ 2), zero(eltype(blank))) 
+            frame = draw(blank, CirclePointRadius(Point(CartesianIndex(ij)), target_width ÷ 2), target_c) 
             write(writer, frame)
         end
     end
@@ -56,7 +57,8 @@ compare() = mktempdir() do path
             reverse(start_location)
         end
     target_width = rand(5:20)
-    org = generate(w, h, target_width, start_ij, file)
+    darker_target = rand(Bool)
+    org = generate(w, h, target_width, start_ij, file, darker_target)
 
     file2 = joinpath(path, "example2.mkv")
     w2 = w ÷ aspect
@@ -68,7 +70,7 @@ compare() = mktempdir() do path
         i, j = Tuple(ij)
         CartesianIndex(i, j ÷ aspect)
     end
-    _, tracked = track(file2; start_location = fix_start_location(start_location))
+    _, tracked = track(file2; start_location = fix_start_location(start_location), darker_target)
     function scale(ij::CartesianIndex{2})
         i, j = Tuple(ij)
         (i, aspect*j)
