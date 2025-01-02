@@ -37,26 +37,23 @@ function getwindow(window_size)
     return radii, window
 end
 
-function initiate(vid, _, start_index::CartesianIndex{2})
-    sz = reverse(out_frame_size(vid))
-    return sz, read(vid), Tuple(start_index)
+function initiate(start_index::CartesianIndex{2}, vid, _, _)
+    return read(vid), Tuple(start_index)
 end
 
-function initiate(vid, _, start_xy::NTuple{2})
-    sz = reverse(out_frame_size(vid))
+function initiate(start_xy::NTuple{2}, vid, _, _)
     x, y = start_xy
     start_ij = round.(Int, (y, x / VideoIO.aspect_ratio(vid)))
-    return sz, read(vid), start_ij
+    return read(vid), start_ij
 end
 
-function initiate(vid, kernel, ::Missing)
-    sz = reverse(out_frame_size(vid))
+function initiate(::Missing, vid, sz, kernel)
     guess = sz .÷ 2
     _, initial_window = getwindow(sz .÷ 2)
     img = read(vid)
     start_ij = getnext(guess, img, initial_window, kernel, sz)
 
-    return sz, img, start_ij
+    return img, start_ij
 end
 
 """
@@ -101,10 +98,13 @@ function _track(vid, start, stop, target_width, start_location, window_size, dar
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    sz, img, start_ij = initiate(vid, kernel, start_location)
+    sz = reverse(out_frame_size(vid))
+    img, start_ij = initiate(start_location, vid, sz, kernel)
 
+    ts = [start]
+    # ts = [gettime(vid)]
     indices = [start_ij]
-    ts = [gettime(vid)]
+
     wr, window = getwindow(fix_window_size(window_size, target_width))
     window_indices = UnitRange.(1 .- wr, sz .+ wr)
     fillvalue = mode(img)
@@ -112,9 +112,9 @@ function _track(vid, start, stop, target_width, start_location, window_size, dar
 
     while !eof(vid)
         read!(vid, pimg.data)
+        push!(ts, gettime(vid))
         guess = getnext(indices[end], pimg , window, kernel, sz)
         push!(indices, guess)
-        push!(ts, gettime(vid))
         if ts[end] ≥ stop
             break
         end
