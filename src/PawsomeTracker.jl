@@ -8,9 +8,11 @@ using LinearAlgebra: LinearAlgebra
 using OffsetArrays: OffsetArrays
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
-using VideoIO: VideoIO, gettime, openvideo, out_frame_size, read, read!
+using FFMPEG_jll: ffmpeg, ffprobe
 
 export track
+
+include("ffmpeg.jl")
 
 function getnext(guess, img, window, kernel, sz)
     frame = OffsetArrays.centered(img, guess)[window]
@@ -37,23 +39,22 @@ function getwindow(window_size)
     return radii, window
 end
 
-function initiate(start_index::CartesianIndex{2}, vid, _, _)
-    return read(vid), Tuple(start_index)
+function initiate(start_index::CartesianIndex{2}, _, _, _, _)
+    return Tuple(start_index)
 end
 
-function initiate(start_xy::NTuple{2}, vid, _, _)
+function initiate(start_xy::NTuple{2}, file, _, _, _)
     x, y = start_xy
-    start_ij = round.(Int, (y, x / VideoIO.aspect_ratio(vid)))
-    return read(vid), start_ij
+    sar = get_sar(file)
+    start_ij = round.(Int, (y, x / sar))
+    return start_ij
 end
 
-function initiate(::Missing, vid, sz, kernel)
+function initiate(::Missing, file, img, sz, kernel)
     guess = sz .÷ 2
     _, initial_window = getwindow(sz .÷ 2)
-    img = read(vid)
     start_ij = getnext(guess, img, initial_window, kernel, sz)
-
-    return img, start_ij
+    return start_ij
 end
 
 """
@@ -78,54 +79,57 @@ Returns a vector with the time-stamps per frame and a vector of Cartesian indice
 """
 function track(file::AbstractString; 
         start::Real = 0,
-        stop::Real = VideoIO.get_duration(file),
+        stop::Real = get_duration(file),
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
         window_size::Union{Missing, Int, NTuple{2, Int}} = missing,
         darker_target::Bool = true
     )
 
-    openvideo(vid -> _track(vid, start, stop, target_width, start_location, window_size, darker_target), file, target_format=VideoIO.AV_PIX_FMT_GRAY8)
-end
-
-function _track(vid, start, stop, target_width, start_location, window_size, darker_target)
-    read(vid) # needed to get the right time offset t₀
-    t₀ = gettime(vid)
-    start += t₀
-    stop += t₀
-    seek(vid, start)
-
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    sz = reverse(out_frame_size(vid))
-    img, start_ij = initiate(start_location, vid, sz, kernel)
+    t = stop - start
 
-    ts = [start]
-    # ts = [gettime(vid)]
-    indices = [start_ij]
+    mktempdir() do path
+        files = joinpath(path, "%03d.jpg")
+        cmd = `$(FFMPEG_jll.ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -frame_pts true $files`
+        run(cmd)
+        files = readdir(path, join=true)
+        ts = [start + parse(Int, first(splitext(basename(file))))/fps for file in files]
 
-    wr, window = getwindow(fix_window_size(window_size, target_width))
-    window_indices = UnitRange.(1 .- wr, sz .+ wr)
-    fillvalue = mode(img)
-    pimg = PaddedView(fillvalue, img, window_indices)
+        img = JpegTurbo.jpeg_decode(files[1])
+        sz = size(img)
+        start_ij = initiate(start_location, file, img, sz, kernel)
 
-    while !eof(vid)
-        read!(vid, pimg.data)
-        push!(ts, gettime(vid))
-        guess = getnext(indices[end], pimg , window, kernel, sz)
-        push!(indices, guess)
-        if ts[end] ≥ stop
-            break
+        n = length(ts)
+        indices = Vector{CartesianIndex{2}}(undef, n)
+        indices[1] = start_ij
+
+        wr, window = getwindow(fix_window_size(window_size, target_width))
+        window_indices = UnitRange.(1 .- wr, sz .+ wr)
+        fillvalue = mode(img)
+        pimg = PaddedView(fillvalue, img, window_indices)
+
+        for i in 2:n
+            pimg.data .= JpegTurbo.jpeg_decode(files[i])
+            guess = getnext(indices[i - 1], pimg , window, kernel, sz)
+            indices[i] = guess
         end
+        return (ts, CartesianIndex.(indices))
     end
+end
+
+
+
+
+
+
 
     # function index2xy(ij::CartesianIndex)
     #     i, j = Tuple(ij)
     #     return (j * VideoIO.aspect_ratio(vid), i)
     # end
 
-    return ts .- t₀, CartesianIndex.(indices)
-end
 
 end
