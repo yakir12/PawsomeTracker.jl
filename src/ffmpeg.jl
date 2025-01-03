@@ -25,17 +25,11 @@ end
 #     return img
 # end
 
-function snap(file, start, stop; fps = get_fps(file))
+function video2frames(path, file, start, stop, fps)
     t = stop - start
-    ts, imgs = mktempdir() do path
-        files = joinpath(path, "%03d.jpg")
-        cmd = `$(FFMPEG_jll.ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -frame_pts true $files`
-        run(cmd)
-        files = readdir(path, join=true)
-        ts = [start + parse(Int, first(splitext(basename(file))))/fps for file in files]
-        imgs = JpegTurbo.jpeg_decode.(files)
-        return (ts, imgs)
-    end
-    return ts, imgs
+    _files = joinpath(path, "%03d.jpg")
+    cmd = `$(FFMPEG_jll.ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -frame_pts true $_files`
+    run(cmd)
+    files = readdir(path, join=true)
+    return files
 end
-

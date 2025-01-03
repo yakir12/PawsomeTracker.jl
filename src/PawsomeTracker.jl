@@ -74,6 +74,7 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     2. `NTuple{2}`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
     3. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
+- `fps`: frames per second. Sets how many times the target's location is registered per second. Set to a low number for faster and sparser tracking, but adjust the `window_size` accordingly. Defaults to the actual frame rate of the video.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
 """
@@ -83,19 +84,15 @@ function track(file::AbstractString;
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
         window_size::Union{Missing, Int, NTuple{2, Int}} = missing,
-        darker_target::Bool = true
+        darker_target::Bool = true,
+        fps::Real = get_fps(file)
     )
 
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    t = stop - start
-
     mktempdir() do path
-        files = joinpath(path, "%03d.jpg")
-        cmd = `$(FFMPEG_jll.ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -frame_pts true $files`
-        run(cmd)
-        files = readdir(path, join=true)
+        files = video2frames(path, file, start, stop, fps)
         ts = [start + parse(Int, first(splitext(basename(file))))/fps for file in files]
 
         img = JpegTurbo.jpeg_decode(files[1])
