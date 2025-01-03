@@ -1,7 +1,7 @@
 using PawsomeTracker
 using Test
 using Aqua
-using ColorTypes, FFMPEG_jll, FixedPointNumbers, ImageDraw, LinearAlgebra, Statistics, VideoIO
+using ColorTypes, FFMPEG_jll, FixedPointNumbers, ImageDraw, LinearAlgebra, Statistics
 
 function generate(w, h, target_width, start_ij, file, darker_target)
     framerate = 24
@@ -64,7 +64,7 @@ compare() = mktempdir() do path
     w2 = w ÷ aspect
     run(`$(FFMPEG_jll.ffmpeg()) -y -hide_banner -loglevel error -i $file -vf scale=$w2:$h,setsar=$aspect -c:v libx264 $file2`)
     # run(`$(FFMPEG.ffmpeg()) -y -hide_banner -loglevel error -i $file -vf scale=$w2:$h,setdar=1:$a,setsar=1:$a -aspect 1:$a -c:v libx264 $file2`)
-    @assert aspect == openvideo(VideoIO.aspect_ratio, file2)
+    @assert aspect == PawsomeTracker.get_sar(file2)
     fix_start_location(x) = x
     function fix_start_location(ij::CartesianIndex{2})
         i, j = Tuple(ij)
