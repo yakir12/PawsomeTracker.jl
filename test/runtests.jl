@@ -1,7 +1,7 @@
 using PawsomeTracker
 using Test
 using Aqua
-using ColorTypes, FFMPEG_jll, FixedPointNumbers, ImageDraw, LinearAlgebra, Statistics
+using ColorTypes, FFMPEG_jll, FixedPointNumbers, ImageDraw, LinearAlgebra, Statistics, VideoIO
 
 function generate(w, h, target_width, start_ij, file, darker_target)
     framerate = 24
