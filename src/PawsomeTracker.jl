@@ -9,6 +9,10 @@ using OffsetArrays: OffsetArrays
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
 using FFMPEG_jll: ffmpeg, ffprobe
+using ColorTypes: Gray
+import ImageMagick
+
+import FileIO
 
 export track
 
@@ -95,12 +99,12 @@ function track(file::AbstractString;
         files = video2frames(path, file, start, stop, fps)
         ts = [start + parse(Int, first(splitext(basename(file))))/fps for file in files]
 
-        img = JpegTurbo.jpeg_decode(files[1])
+        img = Gray.(FileIO.load(files[1]))
         sz = size(img)
         start_ij = initiate(start_location, file, img, sz, kernel)
 
         n = length(ts)
-        indices = Vector{CartesianIndex{2}}(undef, n)
+        indices = Vector{NTuple{2, Int}}(undef, n)
         indices[1] = start_ij
 
         wr, window = getwindow(fix_window_size(window_size, target_width))
@@ -109,7 +113,7 @@ function track(file::AbstractString;
         pimg = PaddedView(fillvalue, img, window_indices)
 
         for i in 2:n
-            pimg.data .= JpegTurbo.jpeg_decode(files[i])
+            pimg.data .= FileIO.load(files[i])
             guess = getnext(indices[i - 1], pimg , window, kernel, sz)
             indices[i] = guess
         end
