@@ -26,8 +26,8 @@ jobs:
       matrix:
         version:
           - 'lts'
-          - 'release'
           - 'pre'
+          - 'nightly'
         os:
           - ubuntu-latest
           - macOS-latest
