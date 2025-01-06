@@ -9,10 +9,7 @@ using OffsetArrays: OffsetArrays
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
 using FFMPEG_jll: ffmpeg, ffprobe
-using ColorTypes: Gray
-import ImageMagick
-
-import FileIO
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio
 
 export track
 
@@ -47,14 +44,14 @@ function initiate(start_index::CartesianIndex{2}, _, _, _, _)
     return Tuple(start_index)
 end
 
-function initiate(start_xy::NTuple{2}, file, _, _, _)
+function initiate(start_xy::NTuple{2}, vid, _, _, _)
     x, y = start_xy
-    sar = get_sar(file)
+    sar = aspect_ratio(vid)
     start_ij = round.(Int, (y, x / sar))
     return start_ij
 end
 
-function initiate(::Missing, file, img, sz, kernel)
+function initiate(::Missing, _, img, sz, kernel)
     guess = sz .÷ 2
     _, initial_window = getwindow(sz .÷ 2)
     start_ij = getnext(guess, img, initial_window, kernel, sz)
@@ -92,33 +89,37 @@ function track(file::AbstractString;
         fps::Real = get_fps(file)
     )
 
+    ts = range(start, stop; step = 1/fps)
+    n = length(ts)
+    t = stop - start
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -f matroska -`
+    ij = openvideo(vid -> _track(vid, n, target_width, start_location, window_size, darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
+    return ts, CartesianIndex.(ij)
+end
+
+function _track(vid, n, target_width, start_location, window_size, darker_target)
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    mktempdir() do path
-        files = video2frames(path, file, start, stop, fps)
-        ts = [start + parse(Int, first(splitext(basename(file))))/fps for file in files]
+    img = read(vid)
+    sz = size(img)
+    start_ij = initiate(start_location, vid, img, sz, kernel)
 
-        img = Gray.(FileIO.load(files[1]))
-        sz = size(img)
-        start_ij = initiate(start_location, file, img, sz, kernel)
+    indices = Vector{NTuple{2, Int}}(undef, n)
+    indices[1] = start_ij
 
-        n = length(ts)
-        indices = Vector{NTuple{2, Int}}(undef, n)
-        indices[1] = start_ij
+    wr, window = getwindow(fix_window_size(window_size, target_width))
+    window_indices = UnitRange.(1 .- wr, sz .+ wr)
+    fillvalue = mode(img)
+    pimg = PaddedView(fillvalue, img, window_indices)
 
-        wr, window = getwindow(fix_window_size(window_size, target_width))
-        window_indices = UnitRange.(1 .- wr, sz .+ wr)
-        fillvalue = mode(img)
-        pimg = PaddedView(fillvalue, img, window_indices)
-
-        for i in 2:n
-            pimg.data .= FileIO.load(files[i])
-            guess = getnext(indices[i - 1], pimg , window, kernel, sz)
-            indices[i] = guess
-        end
-        return (ts, CartesianIndex.(indices))
+    for i in 2:n
+        read!(vid, pimg.data)
+        guess = getnext(indices[i - 1], pimg , window, kernel, sz)
+        indices[i] = guess
     end
+
+    return indices
 end
 
 
@@ -127,10 +128,10 @@ end
 
 
 
-    # function index2xy(ij::CartesianIndex)
-    #     i, j = Tuple(ij)
-    #     return (j * VideoIO.aspect_ratio(vid), i)
-    # end
+# function index2xy(ij::CartesianIndex)
+#     i, j = Tuple(ij)
+#     return (j * VideoIO.aspect_ratio(vid), i)
+# end
 
 
 end

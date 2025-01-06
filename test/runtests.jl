@@ -66,9 +66,6 @@ function compare(framerate, start_location, w, h, target_width, darker_target, a
 end
 
 @testset "PawsomeTracker.jl" begin
-    @testset "Code quality (Aqua.jl)" begin
-        Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
-    end
     @testset "framerate: $framerate" for framerate in (10, 30)
         @testset "width: $w" for w in (100, 150)
             @testset "height: $h" for h in (100, 150)
@@ -84,6 +81,10 @@ end
                 end
             end
         end
+    end
+
+    @testset "Code quality (Aqua.jl)" begin
+        Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
 end
 
