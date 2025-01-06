@@ -92,7 +92,7 @@ function track(file::AbstractString;
     ts = range(start, stop; step = 1/fps)
     n = length(ts)
     t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -f matroska -`
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
     ij = openvideo(vid -> _track(vid, n, target_width, start_location, window_size, darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
     return ts, CartesianIndex.(ij)
 end
