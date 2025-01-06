@@ -8,9 +8,12 @@ using LinearAlgebra: LinearAlgebra
 using OffsetArrays: OffsetArrays
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
-using VideoIO: VideoIO, gettime, openvideo, out_frame_size, read, read!
+using FFMPEG_jll: ffmpeg, ffprobe
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio
 
 export track
+
+include("ffmpeg.jl")
 
 function getnext(guess, img, window, kernel, sz)
     frame = OffsetArrays.centered(img, guess)[window]
@@ -37,23 +40,22 @@ function getwindow(window_size)
     return radii, window
 end
 
-function initiate(start_index::CartesianIndex{2}, vid, _, _)
-    return read(vid), Tuple(start_index)
+function initiate(start_index::CartesianIndex{2}, _, _, _, _)
+    return Tuple(start_index)
 end
 
-function initiate(start_xy::NTuple{2}, vid, _, _)
+function initiate(start_xy::NTuple{2}, vid, _, _, _)
     x, y = start_xy
-    start_ij = round.(Int, (y, x / VideoIO.aspect_ratio(vid)))
-    return read(vid), start_ij
+    sar = aspect_ratio(vid)
+    start_ij = round.(Int, (y, x / sar))
+    return start_ij
 end
 
-function initiate(::Missing, vid, sz, kernel)
+function initiate(::Missing, _, img, sz, kernel)
     guess = sz .÷ 2
     _, initial_window = getwindow(sz .÷ 2)
-    img = read(vid)
     start_ij = getnext(guess, img, initial_window, kernel, sz)
-
-    return img, start_ij
+    return start_ij
 end
 
 """
@@ -73,59 +75,63 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     2. `NTuple{2}`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
     3. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
+- `fps`: frames per second. Sets how many times the target's location is registered per second. Set to a low number for faster and sparser tracking, but adjust the `window_size` accordingly. Defaults to the actual frame rate of the video.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
 """
 function track(file::AbstractString; 
         start::Real = 0,
-        stop::Real = VideoIO.get_duration(file),
+        stop::Real = get_duration(file),
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
         window_size::Union{Missing, Int, NTuple{2, Int}} = missing,
-        darker_target::Bool = true
+        darker_target::Bool = true,
+        fps::Real = get_fps(file)
     )
 
-    openvideo(vid -> _track(vid, start, stop, target_width, start_location, window_size, darker_target), file, target_format=VideoIO.AV_PIX_FMT_GRAY8)
+    ts = range(start, stop; step = 1/fps)
+    n = length(ts)
+    t = stop - start
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -f matroska -`
+    ij = openvideo(vid -> _track(vid, n, target_width, start_location, window_size, darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
+    return ts, CartesianIndex.(ij)
 end
 
-function _track(vid, start, stop, target_width, start_location, window_size, darker_target)
-    read(vid) # needed to get the right time offset t₀
-    t₀ = gettime(vid)
-    start += t₀
-    stop += t₀
-    seek(vid, start)
-
+function _track(vid, n, target_width, start_location, window_size, darker_target)
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    sz = reverse(out_frame_size(vid))
-    img, start_ij = initiate(start_location, vid, sz, kernel)
+    img = read(vid)
+    sz = size(img)
+    start_ij = initiate(start_location, vid, img, sz, kernel)
 
-    ts = [start]
-    # ts = [gettime(vid)]
-    indices = [start_ij]
+    indices = Vector{NTuple{2, Int}}(undef, n)
+    indices[1] = start_ij
 
     wr, window = getwindow(fix_window_size(window_size, target_width))
     window_indices = UnitRange.(1 .- wr, sz .+ wr)
     fillvalue = mode(img)
     pimg = PaddedView(fillvalue, img, window_indices)
 
-    while !eof(vid)
+    for i in 2:n
         read!(vid, pimg.data)
-        push!(ts, gettime(vid))
-        guess = getnext(indices[end], pimg , window, kernel, sz)
-        push!(indices, guess)
-        if ts[end] ≥ stop
-            break
-        end
+        guess = getnext(indices[i - 1], pimg , window, kernel, sz)
+        indices[i] = guess
     end
 
-    # function index2xy(ij::CartesianIndex)
-    #     i, j = Tuple(ij)
-    #     return (j * VideoIO.aspect_ratio(vid), i)
-    # end
-
-    return ts .- t₀, CartesianIndex.(indices)
+    return indices
 end
+
+
+
+
+
+
+
+# function index2xy(ij::CartesianIndex)
+#     i, j = Tuple(ij)
+#     return (j * VideoIO.aspect_ratio(vid), i)
+# end
+
 
 end
