@@ -6,7 +6,8 @@ using ColorTypes, FFMPEG_jll, FixedPointNumbers, ImageDraw, FileIO
 
 function build_trajectory(framerate, start_ij)
     s = 10 # 10 second long test-videos
-    n = s*framerate # number of total frames
+    ts = range(0, s, step = 1/framerate)
+    n = length(ts)
     a = 20/n # controls how tight the spiral is
     tra = Vector{NTuple{2, Int}}(undef, n)
     accumulate!(tra, range(0, 10π, length = n); init = start_ij) do ij, θ
@@ -15,7 +16,7 @@ function build_trajectory(framerate, start_ij)
         xy = cs * r
         ij .+ round.(Int, (real(xy), imag(xy)))
     end
-    return tra
+    return ts, tra
 end
 
 function trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect)
@@ -55,7 +56,7 @@ function compare(framerate, start_location, w, h, target_width, darker_target, a
     mktempdir() do path
         start_ij = location2ij(start_location, h, w)
         # build trajectory
-        tra = build_trajectory(framerate, start_ij)
+        _, tra = build_trajectory(framerate, start_ij)
         # create a video from the trajectory
         file = trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect)
         # track the video
@@ -66,7 +67,7 @@ function compare(framerate, start_location, w, h, target_width, darker_target, a
 end
 
 @testset "PawsomeTracker.jl" begin
-    @testset "framerate: $framerate" for framerate in (10, 30)
+    @testset "framerate: $framerate" for framerate in (25, 50)
         @testset "width: $w" for w in (100, 150)
             @testset "height: $h" for h in (100, 150)
                 @testset "target width: $target_width" for target_width in (5, 20)
@@ -87,6 +88,40 @@ end
         Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
 end
+
+
+# framerate, start_location, w, h, target_width, darker_target, aspect = (10, (50, 60), 100, 130, 5, true, 1)
+# path = mktempdir(; cleanup = false)
+# start_ij = location2ij(start_location, h, w)
+# # build trajectory
+# ts, tra = build_trajectory(framerate, start_ij)
+# # create a video from the trajectory
+# file = trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect)
+# # track the video
+# fps = framerate - 5
+# ts2, tra2 = track(file; start_location = fix_start_location(start_location, aspect), darker_target, fps, window_size = 30)
+#
+#
+#
+#
+# using Interpolations
+#
+# A = permutedims(reinterpret(reshape, Int, tra), (2, 1))
+# iA = interpolate(A, (BSpline(Cubic(Natural(OnGrid())))))
+# itp1 = Interpolations.scale(iA, ts, 1:2)
+# #
+# tra3 = Tuple.(scale.(tra2, aspect))
+# A = permutedims(reinterpret(reshape, Int, tra3), (2, 1))
+# iA = interpolate(A, (BSpline(Cubic(Natural(OnGrid())))))
+# itp2 = Interpolations.scale(iA, ts2, 1:2)
+# #
+# t = range(max(first(ts), first(ts2)), min(last(ts), last(ts2)), 100)
+# #
+# Δs = [(itp1(t, 1) - itp2(t, 1))^2 + (itp1(t, 2) - itp2(t, 2))^2 for t in t]
+# sqrt(mean(Δs))
+#
+#
+# [[(itp(t, 1), itp(t, 2)) for t in ts] scale.(tracked, aspect)]
 
 
 

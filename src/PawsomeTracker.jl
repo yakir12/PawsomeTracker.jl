@@ -86,13 +86,14 @@ function track(file::AbstractString;
         start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
         window_size::Union{Missing, Int, NTuple{2, Int}} = missing,
         darker_target::Bool = true,
-        fps::Real = get_fps(file)
+        fps::Union{Missing, Real} = missing
     )
 
-    ts = range(start, stop; step = 1/fps)
+    framerate = ismissing(fps) ? get_fps(file) : fps
+    ts = range(start, stop; step = 1/framerate)
     n = length(ts)
     t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $framerate -preset veryfast -f matroska -`
     ij = openvideo(vid -> _track(vid, n, target_width, start_location, window_size, darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
     return ts, CartesianIndex.(ij)
 end
@@ -115,8 +116,7 @@ function _track(vid, n, target_width, start_location, window_size, darker_target
 
     for i in 2:n
         read!(vid, pimg.data)
-        guess = getnext(indices[i - 1], pimg , window, kernel, sz)
-        indices[i] = guess
+        indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
     end
 
     return indices
