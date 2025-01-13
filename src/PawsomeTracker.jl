@@ -23,15 +23,15 @@ function getnext(guess, img, window, kernel, sz)
     return min.(max.(guess, (1, 1)), sz)
 end
 
-function fix_window_size(::Missing, target_width)
+function guess_window_size(target_width)
     σ = target_width/2sqrt(log(2))
     l = 4ceil(Int, σ) + 1 # calculates the size of the DoG kernel
     return (l, l)
 end
 
-fix_window_size(wh::NTuple{2, Int}, _) = reverse(wh)
+fix_window_size(wh::NTuple{2, Int}) = reverse(wh)
 
-fix_window_size(l::Int, _) = (l, l)
+fix_window_size(l::Int) = (l, l)
 
 function getwindow(window_size)
     radii = window_size .÷ 2
@@ -70,10 +70,9 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     2. `CartesianIndex{2}`: the Cartesian index (into the image matrix) indicating where the target is at `start`. Note that when the aspect ratio of the video is not equal to one, this Cartesian index should be to the raw, unscaled, image frame.
     3. `NTuple{2}`: (x, y) where x and y are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the target at `start`. Note that regardless of the aspect ratio of the video, this coordinate should be to the scaled image frame (what you'd see in a video player).
     Defaults to `missing`.
-- `window_size`: one of the following:
-    1. `missing`: Defaults to to a good minimal size that depends on the target width (see `fix_window_size` for details).
-    2. `NTuple{2}`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
-    3. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
+- `window_size`: Defaults to to a good minimal size that depends on the target width (see `fix_window_size` for details). But can be one of the following:
+    1. `NTuple{2}`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
+    2. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
 - `fps`: frames per second. Sets how many times the target's location is registered per second. Set to a low number for faster and sparser tracking, but adjust the `window_size` accordingly. Defaults to the actual frame rate of the video.
 
@@ -84,17 +83,16 @@ function track(file::AbstractString;
         stop::Real = get_duration(file),
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
-        window_size::Union{Missing, Int, NTuple{2, Int}} = missing,
+	window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
-        fps::Union{Missing, Real} = missing
+	fps::Real = get_fps(file)
     )
 
-    framerate = ismissing(fps) ? get_fps(file) : fps
-    ts = range(start, stop; step = 1/framerate)
+    ts = range(start, stop; step = 1/fps)
     n = length(ts)
     t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $framerate -preset veryfast -f matroska -`
-    ij = openvideo(vid -> _track(vid, n, target_width, start_location, window_size, darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    ij = openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
     return ts, CartesianIndex.(ij)
 end
 
@@ -109,7 +107,7 @@ function _track(vid, n, target_width, start_location, window_size, darker_target
     indices = Vector{NTuple{2, Int}}(undef, n)
     indices[1] = start_ij
 
-    wr, window = getwindow(fix_window_size(window_size, target_width))
+    wr, window = getwindow(window_size, target_width)
     window_indices = UnitRange.(1 .- wr, sz .+ wr)
     fillvalue = mode(img)
     pimg = PaddedView(fillvalue, img, window_indices)
