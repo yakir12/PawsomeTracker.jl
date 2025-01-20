@@ -107,7 +107,7 @@ function _track(vid, n, target_width, start_location, window_size, darker_target
     indices = Vector{NTuple{2, Int}}(undef, n)
     indices[1] = start_ij
 
-    wr, window = getwindow(window_size, target_width)
+    wr, window = getwindow(window_size)
     window_indices = UnitRange.(1 .- wr, sz .+ wr)
     fillvalue = mode(img)
     pimg = PaddedView(fillvalue, img, window_indices)
