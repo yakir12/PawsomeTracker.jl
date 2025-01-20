@@ -5,23 +5,40 @@ module PawsomeTracker
 
 using ImageFiltering: ImageFiltering, Kernel, imfilter
 using LinearAlgebra: LinearAlgebra
-using OffsetArrays: OffsetArrays
+using OffsetArrays: centered, OffsetMatrix
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
 using FFMPEG_jll: ffmpeg, ffprobe
 using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio
+using ColorTypes: Gray
 
 export track
 
 include("ffmpeg.jl")
 
-function getnext(guess, img, window, kernel, sz)
-    frame = OffsetArrays.centered(img, guess)[window]
-    x = imfilter(frame, kernel)
-    _, i = findmax(x)
-    guess = guess .+ Tuple(window[i])
+struct Tracker
+    sz::Tuple{Int64, Int64}
+    window::CartesianIndices{2, Tuple{UnitRange{Int64}, UnitRange{Int64}}}
+    kernel::OffsetMatrix{Float64, Matrix{Float64}}
+    buff::Matrix{Gray{Float64}}
+
+    function Tracker(kernel, sz, window)
+        buff = Matrix{ColorTypes.Gray{Float64}}(undef, size(window)) 
+        new(sz, window, kernel, buff)
+    end
+end
+
+
+
+
+function (tracker::Tracker)(guess, img)
+    frame = centered(img, guess)[tracker.window]
+    imfilter!(tracker.buff, frame, tracker.kernel)
+    _, i = findmax(tracker.buff)
+    guess = guess .+ Tuple(tracker.window[i])
     return min.(max.(guess, (1, 1)), sz)
 end
+
 
 function guess_window_size(target_width)
     σ = target_width/2sqrt(log(2))
@@ -92,29 +109,34 @@ function track(file::AbstractString;
     n = length(ts)
     t = stop - start
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
-    ij = openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target), open(cmd), target_format=AV_PIX_FMT_GRAY8)
+    vid = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) 
+    ij = _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target)
+    close(vid)
     return ts, CartesianIndex.(ij)
 end
 
 function _track(vid, n, target_width, start_location, window_size, darker_target)
+    
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
     img = read(vid)
     sz = size(img)
     start_ij = initiate(start_location, vid, img, sz, kernel)
-
+    
     indices = Vector{NTuple{2, Int}}(undef, n)
     indices[1] = start_ij
-
+    
     wr, window = getwindow(window_size)
     window_indices = UnitRange.(1 .- wr, sz .+ wr)
     fillvalue = mode(img)
     pimg = PaddedView(fillvalue, img, window_indices)
+    
+    tracker = Tracker(kernel, sz, window)
 
     for i in 2:n
         read!(vid, pimg.data)
-        indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
+        indices[i] = tracker(indices[i - 1], pimg)
     end
 
     return indices
