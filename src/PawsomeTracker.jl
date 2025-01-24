@@ -9,7 +9,7 @@ using OffsetArrays: OffsetArrays
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
 using FFMPEG_jll: ffmpeg, ffprobe
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!, out_frame_size
 using ImageDraw: draw!, CirclePointRadius
 using FreeTypeAbstraction: renderstring!, findfont, FTFont
 using ColorTypes: Gray
@@ -19,6 +19,7 @@ using ImageTransformations: imresize!
 export track
 
 include("ffmpeg.jl")
+include("diagnose.jl")
 
 function getnext(guess, img, window, kernel, sz)
     frame = OffsetArrays.centered(img, guess)[window]
@@ -95,95 +96,155 @@ function track(file::AbstractString;
     )
 
     ts = range(start, stop; step = 1/fps)
-    n = length(ts)
-    t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
-    ij = openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target, diagnostic_file), open(cmd), target_format=AV_PIX_FMT_GRAY8)
-    return ts, CartesianIndex.(ij)
-end
 
-function findfirstfont()
-    for c in 'a':'z'
-        face = findfont(string(c))
-        if !isnothing(face)
-            return face
-        end
-    end
-    return nothing
-end
-
-struct Diagnose
-    label::String
-    face::FTFont
-    writer::VideoWriter
-    buffer::Matrix{Gray{N0f8}}
-    ratio::Int
-
-    function Diagnose(file, img)
-        label = first(splitext(basename(file)))
-        ratio = 8
-        sz = size(img) .÷ ratio
-        sz = 2 .* round.(Int, sz ./ 2)
-        buffer = Matrix{Gray{N0f8}}(undef, sz...)
-        writer = open_video_out(file, buffer)
-        face = findfirstfont()
-        new(label, face, writer, buffer, ratio)
-    end
-end
-
-struct Dont end
-
-diagnose(file, img) = Diagnose(file, img)
-diagnose(::Nothing, img) = Dont()
-
-
-function diagnose(f, file, img)
-    dia = diagnose(file, img)
-    try
-        f(dia)
-    finally
-        close(dia)
-    end
-end
-
-Base.close(dia::Diagnose) = close_video_out!(dia.writer)
-Base.close(::Dont) = nothing
-
-function (dia::Diagnose)(img, point)
-    imresize!(dia.buffer, img)
-    draw!(dia.buffer, CirclePointRadius(CartesianIndex(point .÷ dia.ratio), 2))
-    renderstring!(dia.buffer, dia.label, dia.face, 10, 10, 10, halign=:hleft, valign = :vtop)
-    write(dia.writer, dia.buffer)
-end
-(::Dont)(_, _) = nothing
-
-
-function _track(vid, n, target_width, start_location, window_size, darker_target, diagnostic_file)
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    img = read(vid)
-    sz = size(img)
-    start_ij = initiate(start_location, vid, img, sz, kernel)
-
+    n = length(ts)
     indices = Vector{NTuple{2, Int}}(undef, n)
-    indices[1] = start_ij
+    wr, window = getwindow(fix_window_size(window_size))
 
-    wr, window = getwindow(window_size)
-    window_indices = UnitRange.(1 .- wr, sz .+ wr)
-    fillvalue = mode(img)
-    pimg = PaddedView(fillvalue, img, window_indices)
+    t = stop - start
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
 
-    diagnose(diagnostic_file, img) do dia
+    openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
+        img = read(vid)
+        sz = size(img)
+        start_ij = initiate(start_location, vid, img, sz, kernel)
+
+        indices[1] = start_ij
+
+        window_indices = UnitRange.(1 .- wr, sz .+ wr)
+        fillvalue = mode(img)
+        pimg = PaddedView(fillvalue, img, window_indices)
+
+        diagnose(diagnostic_file, sz) do dia
+            for i in 2:n
+                read!(vid, pimg.data)
+                indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
+                dia(pimg.data, indices[i])
+            end
+        end
+    end
+
+    return ts, CartesianIndex.(indices)
+end
+
+function track(files::Vector{AbstractString}; 
+        start = 0,
+        stop = get_duration.(files),
+        target_width = 25,
+        start_location = missing,
+        window_size = guess_window_size(target_width),
+        darker_target = true,
+        fps = get_fps.(files),
+        diagnostic_file::Union{Nothing, AbstractString} = nothing
+    )
+
+    tss = Vector{
+
+    argss = tuple.(files, start, stop, fps, start_location, target_width, window_size, darker_target)
+    file, start, stop, fps, start_location = argss[1][1:5]
+
+    t = stop - start
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    sz = reverse(openvideo(out_frame_size, open(cmd), target_format=AV_PIX_FMT_GRAY8))
+    diagnose(diagnostic_file, sz) do dia
+        end_location = start_location
+        for (files, start, stop, fps, start_location, target_width, window_size, darker_target) in argss
+            start_location = coalesce(start_location, end_location)
+            ts, ij = _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+            end_location = ij[end]
+        end
+
+
+
+        ts = range(start, stop; step = 1/fps)
+
+        σ = target_width/2sqrt(2log(2))
+        kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
+
+        n = length(ts)
+        indices = Vector{NTuple{2, Int}}(undef, n)
+        wr, window = getwindow(fix_window_size(window_size))
+
+        start_ij = initiate(start_location, vid, img, sz, kernel)
+
+        indices[1] = start_ij
+
+        window_indices = UnitRange.(1 .- wr, sz .+ wr)
+        fillvalue = mode(img)
+        pimg = PaddedView(fillvalue, img, window_indices)
+
         for i in 2:n
             read!(vid, pimg.data)
             indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
             dia(pimg.data, indices[i])
         end
     end
-
-    return indices
 end
+
+return ts, CartesianIndex.(indices)
+end
+
+
+# function _track(vid, n, target_width, start_location, window_size, darker_target, diagnostic_file, dia)
+#     σ = target_width/2sqrt(2log(2))
+#     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
+#
+#     img = read(vid)
+#     sz = size(img)
+#     start_ij = initiate(start_location, vid, img, sz, kernel)
+#
+#     indices = Vector{NTuple{2, Int}}(undef, n)
+#     indices[1] = start_ij
+#
+#     wr, window = getwindow(window_size)
+#     window_indices = UnitRange.(1 .- wr, sz .+ wr)
+#     fillvalue = mode(img)
+#     pimg = PaddedView(fillvalue, img, window_indices)
+#
+#     for i in 2:n
+#         read!(vid, pimg.data)
+#         indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
+#         dia(pimg.data, indices[i])
+#     end
+#
+#     return indices
+# end
+#
+# function track(files::Vector{AbstractString};
+#         start = 0,
+#         stop = get_duration.(files),
+#         target_width = 25,
+#         start_location = missing,
+#         window_size = guess_window_size(target_width),
+#         darker_target = true,
+#         fps = get_fps.(files),
+#         diagnostic_file = nothing)
+#
+#     ts = range(start, stop; step = 1/fps)
+#     n = length(ts)
+#     t = stop - start
+#     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+#     ij = diagnose(diagnostic_file, img) do dia
+#         openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target, diagnostic_file, dia), open(cmd), target_format=AV_PIX_FMT_GRAY8)
+#     end
+#
+#     tss, ijs = diagnose(diagnostic_file, img) do dia
+#         track2.(files, start, stop, target_width, start_location, window_size, darker_target, fps)
+#     end
+# end
+#
+# function track2(file, start, stop, target_width, start_location, window_size, darker_target, fps)
+#     ts = range(start, stop; step = 1/fps)
+#     n = length(ts)
+#     t = stop - start
+#     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+#     ij = openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target, diagnostic_file), open(cmd), target_format=AV_PIX_FMT_GRAY8)
+#     return ts, CartesianIndex.(ij)
+# end
+
 
 # TODO: if I'm resizeing evrything, might as well track the smaller image, 
 

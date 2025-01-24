@@ -52,7 +52,7 @@ function scale(ij::CartesianIndex{2}, aspect)
     (i, round(Int, aspect*j))
 end
 
-function compare(framerate, start_location, w, h, target_width, darker_target, aspect)
+function compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file = nothing)
     mktempdir() do path
         start_ij = location2ij(start_location, h, w)
         # build trajectory
@@ -60,13 +60,23 @@ function compare(framerate, start_location, w, h, target_width, darker_target, a
         # create a video from the trajectory
         file = trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect)
         # track the video
-        _, tracked = track(file; start_location = fix_start_location(start_location, aspect), darker_target)
+        _, tracked = track(file; start_location = fix_start_location(start_location, aspect), darker_target, diagnostic_file)
         # compare the tracked trajectory to the original one
         return sqrt(mean([LinearAlgebra.norm_sqr(o .- scale(t, aspect)) for (o, t) in zip(tra, tracked)]))
     end
 end
 
 @testset "PawsomeTracker.jl" begin
+
+    @testset "diagnostic file" begin
+        mktempdir() do path
+            diagnostic_file = joinpath(path, "file.ts")
+            ϵ = compare(30, (55, 55), 100, 100, 11, true, 1, diagnostic_file)
+            @test ϵ < 1
+            @test isfile(diagnostic_file)
+        end
+    end
+
     @testset "framerate: $framerate" for framerate in (25, 50)
         @testset "width: $w" for w in (100, 150)
             @testset "height: $h" for h in (100, 150)
@@ -89,6 +99,7 @@ end
     end
 end
 
+#TODO: add the concurrent threaded version
 
 # framerate, start_location, w, h, target_width, darker_target, aspect = (10, (50, 60), 100, 130, 5, true, 1)
 # path = mktempdir(; cleanup = false)
