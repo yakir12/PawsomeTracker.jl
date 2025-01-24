@@ -15,6 +15,9 @@ using FreeTypeAbstraction: renderstring!, findfont, FTFont
 using ColorTypes: Gray
 using FixedPointNumbers: N0f8
 using ImageTransformations: imresize!
+using RelocatableFolders: @path
+
+const ASSETS = @path joinpath(@__DIR__, "../assets")
 
 export track
 
@@ -118,7 +121,7 @@ function track(file::AbstractString;
         fillvalue = mode(img)
         pimg = PaddedView(fillvalue, img, window_indices)
 
-        diagnose(diagnostic_file, sz) do dia
+        diagnose(diagnostic_file, sz, darker_target) do dia
             for i in 2:n
                 read!(vid, pimg.data)
                 indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
@@ -130,44 +133,22 @@ function track(file::AbstractString;
     return ts, CartesianIndex.(indices)
 end
 
-function track(files::Vector{AbstractString}; 
-        start = 0,
-        stop = get_duration.(files),
-        target_width = 25,
-        start_location = missing,
-        window_size = guess_window_size(target_width),
-        darker_target = true,
-        fps = get_fps.(files),
-        diagnostic_file::Union{Nothing, AbstractString} = nothing
-    )
+function _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+    ts = range(start, stop; step = 1/fps)
 
-    tss = Vector{
+    σ = target_width/2sqrt(2log(2))
+    kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
 
-    argss = tuple.(files, start, stop, fps, start_location, target_width, window_size, darker_target)
-    file, start, stop, fps, start_location = argss[1][1:5]
+    n = length(ts)
+    indices = Vector{NTuple{2, Int}}(undef, n)
+    wr, window = getwindow(fix_window_size(window_size))
 
     t = stop - start
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
-    sz = reverse(openvideo(out_frame_size, open(cmd), target_format=AV_PIX_FMT_GRAY8))
-    diagnose(diagnostic_file, sz) do dia
-        end_location = start_location
-        for (files, start, stop, fps, start_location, target_width, window_size, darker_target) in argss
-            start_location = coalesce(start_location, end_location)
-            ts, ij = _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-            end_location = ij[end]
-        end
 
-
-
-        ts = range(start, stop; step = 1/fps)
-
-        σ = target_width/2sqrt(2log(2))
-        kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
-
-        n = length(ts)
-        indices = Vector{NTuple{2, Int}}(undef, n)
-        wr, window = getwindow(fix_window_size(window_size))
-
+    openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
+        img = read(vid)
+        sz = size(img)
         start_ij = initiate(start_location, vid, img, sz, kernel)
 
         indices[1] = start_ij
@@ -182,10 +163,48 @@ function track(files::Vector{AbstractString};
             dia(pimg.data, indices[i])
         end
     end
+
+    return ts, CartesianIndex.(indices)
 end
 
-return ts, CartesianIndex.(indices)
+function track(files::Vector{AbstractString}; 
+        start = 0,
+        stop = get_duration.(files),
+        target_width = 25,
+        start_location = missing,
+        window_size = guess_window_size(target_width),
+        darker_target = true,
+        fps::Real = get_fps(files[1]),
+        diagnostic_file::Union{Nothing, AbstractString} = nothing
+    )
+
+    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}[]
+    ijs = Vector{Vector{CartesianIndex{2}}}[]
+
+    argss = tuple.(files, start, stop, fps, start_location, target_width, window_size, darker_target)
+    file, start, stop, fps, start_location = argss[1][1:5]
+
+    t = stop - start
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    sz = reverse(openvideo(out_frame_size, open(cmd), target_format=AV_PIX_FMT_GRAY8))
+    diagnose(diagnostic_file, sz, darker_target) do dia
+        end_location = start_location
+        for (files, start, stop, fps, start_location, target_width, window_size, darker_target) in argss
+            start_location = coalesce(start_location, end_location)
+            ts, ij = _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+            push!(tss, ts)
+            push!(ijs, ij)
+            end_location = ij[end]
+        end
+    end
+    n = sum(length, tss)
+    ts = range(tss[1][1], step = step(tss[1]), length = n)
+    ij = vcat(ijs)
+
+    return ts, ij
 end
+
+
 
 
 # function _track(vid, n, target_width, start_location, window_size, darker_target, diagnostic_file, dia)
