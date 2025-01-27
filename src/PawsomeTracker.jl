@@ -62,7 +62,7 @@ end
 
 function initiate(::Missing, _, img, sz, kernel)
     guess = sz .÷ 2
-    _, initial_window = getwindow(sz .÷ 2)
+    _, initial_window = getwindow(sz .÷ 5)
     start_ij = getnext(guess, img, initial_window, kernel, sz)
     return start_ij
 end
@@ -167,13 +167,13 @@ function _track(file, start, stop, target_width, start_location, window_size, da
     return ts, CartesianIndex.(indices)
 end
 
-function track(files::Vector; 
-        start = 0,
-        stop = get_duration.(files),
-        target_width = 25,
+function track(files::AbstractVector; 
+        start::Union{Real, AbstractVector} = 0,
+        stop::Union{Real, AbstractVector} = get_duration.(files),
+        target_width::Real = 25,
         start_location = missing,
-        window_size = guess_window_size(target_width),
-        darker_target = true,
+        window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
+        darker_target::Bool = true,
         fps::Real = get_fps(files[1]),
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
@@ -182,15 +182,15 @@ function track(files::Vector;
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
     ijs = Vector{Vector{CartesianIndex{2}}}(undef, nfiles)
 
-    argss = tuple.(files, start, stop, fps, Ref(start_location), target_width, Ref(window_size), darker_target)
-    file, start, stop, fps, start_location = argss[1][1:5]
+    args = tuple.(files, start, stop, start_location)
 
-    t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    file1, start1, stop1, start_location1 = args[1]
+    t = stop1 - start1
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start1 -i $file1 -t $t -r $fps -preset veryfast -f matroska -`
     sz = reverse(openvideo(out_frame_size, open(cmd), target_format=AV_PIX_FMT_GRAY8))
     diagnose(diagnostic_file, sz, darker_target) do dia
-        end_location = start_location
-        for (i, (file, start, stop, fps, start_location, target_width, window_size, darker_target)) in enumerate(argss)
+        end_location = missing
+        for (i, (file, start, stop, start_location)) in enumerate(args)
             start_location = coalesce(start_location, end_location)
             ts, ij = _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
             tss[i] = ts
