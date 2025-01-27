@@ -167,7 +167,7 @@ function _track(file, start, stop, target_width, start_location, window_size, da
     return ts, CartesianIndex.(indices)
 end
 
-function track(files::Vector{AbstractString}; 
+function track(files::Vector; 
         start = 0,
         stop = get_duration.(files),
         target_width = 25,
@@ -178,10 +178,11 @@ function track(files::Vector{AbstractString};
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
 
-    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}[]
-    ijs = Vector{Vector{CartesianIndex{2}}}[]
+    nfiles = length(files)
+    tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
+    ijs = Vector{Vector{CartesianIndex{2}}}(undef, nfiles)
 
-    argss = tuple.(files, start, stop, fps, start_location, target_width, window_size, darker_target)
+    argss = tuple.(files, start, stop, fps, Ref(start_location), target_width, Ref(window_size), darker_target)
     file, start, stop, fps, start_location = argss[1][1:5]
 
     t = stop - start
@@ -189,17 +190,17 @@ function track(files::Vector{AbstractString};
     sz = reverse(openvideo(out_frame_size, open(cmd), target_format=AV_PIX_FMT_GRAY8))
     diagnose(diagnostic_file, sz, darker_target) do dia
         end_location = start_location
-        for (files, start, stop, fps, start_location, target_width, window_size, darker_target) in argss
+        for (i, (file, start, stop, fps, start_location, target_width, window_size, darker_target)) in enumerate(argss)
             start_location = coalesce(start_location, end_location)
             ts, ij = _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-            push!(tss, ts)
-            push!(ijs, ij)
+            tss[i] = ts
+            ijs[i] = ij
             end_location = ij[end]
         end
     end
     n = sum(length, tss)
     ts = range(tss[1][1], step = step(tss[1]), length = n)
-    ij = vcat(ijs)
+    ij = vcat(ijs...)
 
     return ts, ij
 end

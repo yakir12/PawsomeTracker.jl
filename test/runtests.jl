@@ -18,15 +18,46 @@ function spiral(r, nframes, start_ij)
     return ij
 end
 
+function circle(r, nframes, start_ij)
+    loops = 5
+    ij = Vector{NTuple{2, Int}}(undef, nframes)
+    for (i, θ) in enumerate(range(0, loops*2π, nframes))
+        ij[i] = start_ij .+ round.(Int, r .* reverse(sincos(θ)) .+ Tuple(randn(2)))
+    end
+    return ij
+end
+
 function build_trajectory(r, framerate, start_ij)
     s = 10 # 10 second long test-videos
     ts = range(0, s, step = 1/framerate)
     nframes = length(ts)
-    tra = spiral(r, nframes, start_ij)
+    tra = circle(r, nframes, start_ij)
     return ts, tra
 end
 
-function trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect)
+function my_partition(xs, nsegments)
+    n = length(xs)
+    i1 = round.(Int, range(1, n, nsegments + 1))[1:end-1]
+    i2 = i1[2:end] .- 1
+    push!(i2, n)
+    return (xs[i1:i2] for (i1, i2) in zip(i1, i2))
+end
+
+function split(path)
+    nsegments = 2
+    img_files = readdir(path; join = true)
+    img_filess = my_partition(img_files, nsegments)
+    folders = joinpath.(path, string.(1:nsegments))
+    for (folder, img_files) in zip(folders, img_filess)
+        mkdir(folder)
+        for (i, file) in enumerate(img_files)
+            mv(file, joinpath(folder, @sprintf("%04i.jpg", i)))
+        end
+    end
+    return folders
+end
+
+function trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect, segmented)
     bkgd_c, target_c = darker_target ? (Gray{N0f8}(1), Gray{N0f8}(0)) : (Gray{N0f8}(0), Gray{N0f8}(1))
     blank = fill(bkgd_c, h, w)
     for (i, ij) in enumerate(tra)
@@ -35,9 +66,19 @@ function trajectory2video(tra, path, framerate, w, h, target_width, darker_targe
         FileIO.save(name, frame)
     end
     w2 = w ÷ aspect
-    file = joinpath(path, "example.mp4")
-    run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $framerate -i $(joinpath(path, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $framerate -pix_fmt yuv420p $file`)
-    return file
+    if segmented
+        folders = split(path)
+        nsegments = length(folders)
+        files = joinpath.(path, string.(1:nsegments, ".mp4"))
+        for (file, folder) in zip(files, folders)
+            run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $framerate -i $(joinpath(folder, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $framerate -pix_fmt yuv420p $file`)
+        end
+        return files
+    else
+        file = joinpath(path, "example.mp4")
+        run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $framerate -i $(joinpath(path, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $framerate -pix_fmt yuv420p $file`)
+        return file
+    end
 end
 
 location2ij(::Missing, h, w) = (h÷2, w÷2) 
@@ -59,20 +100,27 @@ function scale(ij::CartesianIndex{2}, aspect)
     (i, round(Int, aspect*j))
 end
 
-function compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file)
+function compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, segmented)
     mktempdir() do path
+
+        path = "kaka"
+        mkpath(path)
+framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, segmented = (25, (500, 500), 1000, 1000, 10, true, 1, "test.ts", false)
         start_ij = location2ij(start_location, h, w)
         # build trajectory
         r = min(min.(start_ij, (h, w) .- start_ij)...)
         _, tra = build_trajectory(0.8r, framerate, start_ij)
         # create a video from the trajectory
-        file = trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect)
+        file = trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect, segmented)
         # track the video
         _, tracked = track(file; start_location = fix_start_location(start_location, aspect), darker_target, diagnostic_file)
+
         # compare the tracked trajectory to the original one
         return sqrt(mean([LinearAlgebra.norm_sqr(o .- scale(t, aspect)) for (o, t) in zip(tra, tracked)]))
     end
 end
+
+
 
 @testset "PawsomeTracker.jl" begin
     mktempdir() do temp_path
@@ -84,9 +132,11 @@ end
                             @testset "aspect: $aspect" for aspect in (0.5, 1, 1.5)
                                 @testset "start locationt $start_location" for start_location in (missing, CartesianIndex(60, 50), (50, 60))
                                     @testset "diagnostic file is $diagnostic_file" for diagnostic_file in (nothing, joinpath(temp_path, "test.ts"))
-                                        ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file)
-                                        @test isnothing(diagnostic_file) || isfile(diagnostic_file)
-                                        @test ϵ < 1
+                                        @testset "segmented video files: $segmented" for segmented in (false, true)
+                                            ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, segmented)
+                                            @test isnothing(diagnostic_file) || isfile(diagnostic_file)
+                                            @test ϵ < 1
+                                        end
                                     end
                                 end
                             end
