@@ -167,8 +167,9 @@ end
     end
 
     @testset "threaded" begin
-        if Threads.nthreads() > 1
-            Threads.@threads for _ in 1:4
+        n = Threads.nthreads()
+        if n > 1
+            Threads.@threads for _ in 1:2n # twice the number of threads
                 ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
                 @test ϵ < 1
             end
