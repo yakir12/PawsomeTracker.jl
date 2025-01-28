@@ -15,8 +15,7 @@ function spiral(r, nframes, start_ij)
     θs = [only(roots(f - l)) for l in range(start = 0, length = nframes + 1, stop = maximum(f))][2:end]
     ij = Vector{NTuple{2, Int}}(undef, nframes)
     for (i, θ) in enumerate(θs)
-        cmplx = round(Complex{Int}, a*θ * cis(θ) + randn(Complex{Float64}))
-        ij[i] = (real(cmplx), imag(cmplx))
+        ij[i] = round.(Int, a*θ .* reverse(sincos(θ)) .+ Tuple(randn(2)))
     end
     return [i .- ij[1] .+ start_ij for i in ij]
 end
