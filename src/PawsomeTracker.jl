@@ -171,7 +171,7 @@ function track(files::AbstractVector;
         start::Union{Real, AbstractVector} = 0,
         stop::Union{Real, AbstractVector} = get_duration.(files),
         target_width::Real = 25,
-        start_location::Vector = similar(files, Missing),
+        start_location::AbstractVector = similar(files, Missing),
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
         fps::Real = get_fps(files[1]),
