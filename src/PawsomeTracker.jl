@@ -108,7 +108,7 @@ function track(file::AbstractString;
     wr, window = getwindow(fix_window_size(window_size))
 
     t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -filter:v fps=$fps -preset veryfast -f matroska -`
 
     openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
         img = read(vid)
