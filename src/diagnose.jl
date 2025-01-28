@@ -41,7 +41,7 @@ Base.close(::Dont) = nothing
 
 function (dia::Diagnose)(img, point)
     imresize!(dia.buffer, img)
-    draw!(dia.buffer, CirclePointRadius(CartesianIndex(point .÷ dia.ratio), 2), dia.color)
+    draw!(dia.buffer, CirclePointRadius(CartesianIndex(point .÷ dia.ratio), 1), dia.color)
     renderstring!(dia.buffer, dia.label, dia.face, 10, 10, 10, halign=:hleft, valign = :vtop)
     write(dia.writer, dia.buffer)
 end

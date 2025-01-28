@@ -19,6 +19,7 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
 
 [compat]
+ApproxFun = "0.13.27"
 Aqua = "0.8"
 ColorTypes = "0.7, 0.8, 0.9, 0.10, 0.11, 0.12"
 FFMPEG_jll = "4.4.4"
@@ -41,6 +42,7 @@ VideoIO = "1.1.1"
 julia = "1.8"
 
 [extras]
+ApproxFun = "28f2ccd6-bb30-5033-b560-165f7b14dc2f"
 Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
 ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
 FFMPEG_jll = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
@@ -54,4 +56,4 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Aqua", "ColorTypes", "FFMPEG_jll", "FileIO", "FixedPointNumbers", "ImageDraw", "JpegTurbo", "LinearAlgebra", "Statistics", "Printf", "Test"]
+test = ["ApproxFun", "Aqua", "ColorTypes", "FFMPEG_jll", "FileIO", "FixedPointNumbers", "ImageDraw", "JpegTurbo", "LinearAlgebra", "Statistics", "Printf", "Test"]

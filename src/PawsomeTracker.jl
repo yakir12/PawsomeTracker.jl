@@ -98,7 +98,7 @@ function track(file::AbstractString;
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
 
-    ts = range(start, stop; step = 1/fps)
+    ts = range(start, stop - 0.001; step = 1/fps)
 
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
@@ -134,7 +134,7 @@ function track(file::AbstractString;
 end
 
 function _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-    ts = range(start, stop; step = 1/fps)
+    ts = range(start, stop - 0.001; step = 1/fps)
 
     σ = target_width/2sqrt(2log(2))
     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
@@ -171,7 +171,7 @@ function track(files::AbstractVector;
         start::Union{Real, AbstractVector} = 0,
         stop::Union{Real, AbstractVector} = get_duration.(files),
         target_width::Real = 25,
-        start_location = missing,
+        start_location::Vector = similar(files, Missing),
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
         fps::Real = get_fps(files[1]),
