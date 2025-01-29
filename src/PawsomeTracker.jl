@@ -18,9 +18,16 @@ using ImageTransformations: imresize!
 using RelocatableFolders: @path
 using ComputationalResources: CPUThreads
 
-const ASSETS = @path joinpath(@__DIR__, "../assets")
+const FACE = Ref{FTFont}()
+
+function __init__()
+    assets = @path joinpath(@__DIR__, "../assets")
+    FACE[] = FTFont(joinpath(assets, "TeXGyreHerosMakie-Regular.otf"))
+end
 
 export track
+
+const BW = Matrix{Gray{N0f8}}
 
 include("ffmpeg.jl")
 include("diagnose.jl")
@@ -48,7 +55,7 @@ struct Tracker
     end
 end
 
-function (trckr::Tracker)(guess)
+function (trckr::Tracker)(guess::NTuple{2, Int})
     window_indices = UnitRange.(guess .- trckr.radii, guess .+ trckr.radii)
     imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
     # # imfilter!(CPU1(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
@@ -61,7 +68,7 @@ end
 function guess_window_size(target_width)
     σ = target_width/2sqrt(log(2))
     l = 4ceil(Int, σ) + 1 # calculates the size of the DoG kernel
-    return (l, l)
+    return l
 end
 
 fix_window_size(wh::NTuple{2, Int}) = reverse(wh)
@@ -72,7 +79,7 @@ function get_start_ij(start_index::CartesianIndex{2}, _, _, _, _)
     return Tuple(start_index)
 end
 
-function get_start_ij(start_xy::NTuple{2}, vid, _, _, _)
+function get_start_ij(start_xy::NTuple{2, Int}, vid, _, _, _)
     sar = aspect_ratio(vid)
     x, y = start_xy
     return round.(Int, (y, x / sar))
@@ -112,7 +119,7 @@ function track(file::AbstractString;
         start::Real = 0,
         stop::Real = get_duration(file),
         target_width::Real = 25,
-        start_location::Union{Missing, NTuple{2}, CartesianIndex{2}} = missing,
+        start_location::Union{Missing, NTuple{2, Int}, CartesianIndex{2}} = missing,
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
         fps::Real = get_fps(file),
@@ -121,7 +128,7 @@ function track(file::AbstractString;
 
     window_size = fix_window_size(window_size)
     diagnose(diagnostic_file, darker_target) do dia
-        return track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+        track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
     end
 end
 
@@ -129,21 +136,22 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     ts = range(start, stop; step = 1/fps)
     n = length(ts)
     indices = Vector{NTuple{2, Int}}(undef, n)
-    frame_index = 1
 
     t = stop - start
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
 
-    openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
+    frame_index = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
+        last_frame::Int = 1
         img = read(vid)
         indices[1] = get_start_ij(start_location, vid, target_width, darker_target, img)
         trckr = Tracker(img, target_width, window_size, darker_target)
-        while !eof(vid) && frame_index < n
-            frame_index += 1
+        while !eof(vid) && last_frame < n
+            last_frame += 1
             read!(vid, trckr.img.data)
-            indices[frame_index] = trckr(indices[frame_index - 1])
-            dia(trckr.img.data, indices[frame_index])
+            indices[last_frame] = trckr(indices[last_frame - 1])
+            dia(trckr.img.data, indices[last_frame])
         end
+        return last_frame
     end
     return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
 end
@@ -190,5 +198,4 @@ end
 #     return (j * VideoIO.aspect_ratio(vid), i)
 # end
 
-
-    end
+end
