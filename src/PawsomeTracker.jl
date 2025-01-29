@@ -3,9 +3,9 @@ module PawsomeTracker
 # using LinearAlgebra
 # using VideoIO, OffsetArrays, ImageFiltering, PaddedViews, StatsBase
 
-using ImageFiltering: ImageFiltering, Kernel, imfilter
+using ImageFiltering: ImageFiltering, Kernel, imfilter!, Algorithm, NoPad
 using LinearAlgebra: LinearAlgebra
-using OffsetArrays: OffsetArrays
+using OffsetArrays: centered, OffsetMatrix
 using PaddedViews: PaddedViews, PaddedView
 using StatsBase: StatsBase, mode
 using FFMPEG_jll: ffmpeg, ffprobe
@@ -16,6 +16,7 @@ using ColorTypes: Gray
 using FixedPointNumbers: N0f8
 using ImageTransformations: imresize!
 using RelocatableFolders: @path
+using ComputationalResources: CPUThreads
 
 const ASSETS = @path joinpath(@__DIR__, "../assets")
 
@@ -24,12 +25,37 @@ export track
 include("ffmpeg.jl")
 include("diagnose.jl")
 
-function getnext(guess, img, window, kernel, sz)
-    frame = OffsetArrays.centered(img, guess)[window]
-    x = imfilter(frame, kernel)
-    _, i = findmax(x)
-    guess = guess .+ Tuple(window[i])
-    return min.(max.(guess, (1, 1)), sz)
+struct Tracker
+    sz::Tuple{Int64, Int64}
+    radii::Tuple{Int64, Int64}
+    kernel::OffsetMatrix{Float64, Matrix{Float64}}
+    img::PaddedView{Gray{N0f8},2,Tuple{Base.IdentityUnitRange{UnitRange{Int64}},Base.IdentityUnitRange{UnitRange{Int64}}},PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
+    buff::OffsetMatrix{Float64, Matrix{Float64}}
+
+    function Tracker(_img, target_width, window_size, darker_target)
+        sz = size(_img)
+        σ = target_width/2sqrt(2log(2))
+        direction = darker_target ? -1 : +1
+        kernel = direction*Kernel.DoG(σ)
+        radii = window_size .÷ 2
+        h = radii .+ size(kernel)
+        pad_indices = UnitRange.(1 .- h, sz .+ h)
+        fillvalue = mode(_img)
+        img = PaddedView(fillvalue, _img, pad_indices)
+        _buff = Matrix{Float64}(undef, length.(pad_indices)) 
+        buff = OffsetMatrix(_buff, pad_indices)
+        return new(sz, radii, kernel, img, buff)
+    end
+end
+
+function (trckr::Tracker)(guess)
+    window_indices = UnitRange.(guess .- trckr.radii, guess .+ trckr.radii)
+    imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
+    # # imfilter!(CPU1(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
+    v = view(trckr.buff, window_indices...)
+    _, ij = findmax(v)
+    guess = getindex.(parentindices(v), Tuple(ij))
+    return min.(max.(guess, (1, 1)), trckr.sz)
 end
 
 function guess_window_size(target_width)
@@ -42,30 +68,25 @@ fix_window_size(wh::NTuple{2, Int}) = reverse(wh)
 
 fix_window_size(l::Int) = (l, l)
 
-function getwindow(window_size)
-    radii = window_size .÷ 2
-    wr = CartesianIndex(radii)
-    window = -wr:wr
-    return radii, window
-end
-
-function initiate(start_index::CartesianIndex{2}, _, _, _, _)
+function get_start_ij(start_index::CartesianIndex{2}, _, _, _, _)
     return Tuple(start_index)
 end
 
-function initiate(start_xy::NTuple{2}, vid, _, _, _)
-    x, y = start_xy
+function get_start_ij(start_xy::NTuple{2}, vid, _, _, _)
     sar = aspect_ratio(vid)
-    start_ij = round.(Int, (y, x / sar))
-    return start_ij
+    x, y = start_xy
+    return round.(Int, (y, x / sar))
 end
 
-function initiate(::Missing, _, img, sz, kernel)
-    guess = sz .÷ 2
-    _, initial_window = getwindow(sz .÷ 5)
-    start_ij = getnext(guess, img, initial_window, kernel, sz)
-    return start_ij
+function get_start_ij(::Missing, _, target_width, darker_target, img)
+    sz = size(img)
+    window_size = sz .÷ 4 # this greatly affects processing time!
+    trckr = Tracker(img, target_width, window_size, darker_target) # 0.5 seconds
+    return trckr(trckr.sz .÷ 2)
 end
+
+
+
 
 """
     track(file; start, stop, target_width, start_location, window_size)
@@ -98,73 +119,33 @@ function track(file::AbstractString;
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
 
-    ts = range(start, stop - 0.001; step = 1/fps)
-
-    σ = target_width/2sqrt(2log(2))
-    kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
-
-    n = length(ts)
-    indices = Vector{NTuple{2, Int}}(undef, n)
-    wr, window = getwindow(fix_window_size(window_size))
-
-    t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -filter:v fps=$fps -preset veryfast -f matroska -`
-
-    openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
-        img = read(vid)
-        sz = size(img)
-        start_ij = initiate(start_location, vid, img, sz, kernel)
-
-        indices[1] = start_ij
-
-        window_indices = UnitRange.(1 .- wr, sz .+ wr)
-        fillvalue = mode(img)
-        pimg = PaddedView(fillvalue, img, window_indices)
-
-        diagnose(diagnostic_file, sz, darker_target) do dia
-            for i in 2:n
-                read!(vid, pimg.data)
-                indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
-                dia(pimg.data, indices[i])
-            end
-        end
+    window_size = fix_window_size(window_size)
+    diagnose(diagnostic_file, darker_target) do dia
+        return track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
     end
-
-    return ts, CartesianIndex.(indices)
 end
 
-function _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-    ts = range(start, stop - 0.001; step = 1/fps)
-
-    σ = target_width/2sqrt(2log(2))
-    kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
-
+function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+    ts = range(start, stop; step = 1/fps)
     n = length(ts)
     indices = Vector{NTuple{2, Int}}(undef, n)
-    wr, window = getwindow(fix_window_size(window_size))
+    frame_index = 1
 
     t = stop - start
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
 
     openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
         img = read(vid)
-        sz = size(img)
-        start_ij = initiate(start_location, vid, img, sz, kernel)
-
-        indices[1] = start_ij
-
-        window_indices = UnitRange.(1 .- wr, sz .+ wr)
-        fillvalue = mode(img)
-        pimg = PaddedView(fillvalue, img, window_indices)
-
-        for i in 2:n
-            read!(vid, pimg.data)
-            indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
-            dia(pimg.data, indices[i])
+        indices[1] = get_start_ij(start_location, vid, target_width, darker_target, img)
+        trckr = Tracker(img, target_width, window_size, darker_target)
+        while !eof(vid) && frame_index < n
+            frame_index += 1
+            read!(vid, trckr.img.data)
+            indices[frame_index] = trckr(indices[frame_index - 1])
+            dia(trckr.img.data, indices[frame_index])
         end
     end
-
-    return ts, CartesianIndex.(indices)
+    return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
 end
 
 function track(files::AbstractVector; 
@@ -181,21 +162,15 @@ function track(files::AbstractVector;
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
     ijs = Vector{Vector{CartesianIndex{2}}}(undef, nfiles)
-
     args = tuple.(files, start, stop, start_location)
+    window_size = fix_window_size(window_size)
 
-    file1, start1, stop1, start_location1 = args[1]
-    t = stop1 - start1
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start1 -i $file1 -t $t -r $fps -preset veryfast -f matroska -`
-    sz = reverse(openvideo(out_frame_size, open(cmd), target_format=AV_PIX_FMT_GRAY8))
-    diagnose(diagnostic_file, sz, darker_target) do dia
+    diagnose(diagnostic_file, darker_target) do dia
         end_location = missing
         for (i, (file, start, stop, start_location)) in enumerate(args)
             start_location = coalesce(start_location, end_location)
-            ts, ij = _track(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-            tss[i] = ts
-            ijs[i] = ij
-            end_location = ij[end]
+            tss[i], ijs[i] = track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+            end_location = ijs[i][end]
         end
     end
     n = sum(length, tss)
@@ -204,66 +179,6 @@ function track(files::AbstractVector;
 
     return ts, ij
 end
-
-
-
-
-# function _track(vid, n, target_width, start_location, window_size, darker_target, diagnostic_file, dia)
-#     σ = target_width/2sqrt(2log(2))
-#     kernel = darker_target ? -Kernel.DoG(σ) : Kernel.DoG(σ)
-#
-#     img = read(vid)
-#     sz = size(img)
-#     start_ij = initiate(start_location, vid, img, sz, kernel)
-#
-#     indices = Vector{NTuple{2, Int}}(undef, n)
-#     indices[1] = start_ij
-#
-#     wr, window = getwindow(window_size)
-#     window_indices = UnitRange.(1 .- wr, sz .+ wr)
-#     fillvalue = mode(img)
-#     pimg = PaddedView(fillvalue, img, window_indices)
-#
-#     for i in 2:n
-#         read!(vid, pimg.data)
-#         indices[i] = getnext(indices[i - 1], pimg , window, kernel, sz)
-#         dia(pimg.data, indices[i])
-#     end
-#
-#     return indices
-# end
-#
-# function track(files::Vector{AbstractString};
-#         start = 0,
-#         stop = get_duration.(files),
-#         target_width = 25,
-#         start_location = missing,
-#         window_size = guess_window_size(target_width),
-#         darker_target = true,
-#         fps = get_fps.(files),
-#         diagnostic_file = nothing)
-#
-#     ts = range(start, stop; step = 1/fps)
-#     n = length(ts)
-#     t = stop - start
-#     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
-#     ij = diagnose(diagnostic_file, img) do dia
-#         openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target, diagnostic_file, dia), open(cmd), target_format=AV_PIX_FMT_GRAY8)
-#     end
-#
-#     tss, ijs = diagnose(diagnostic_file, img) do dia
-#         track2.(files, start, stop, target_width, start_location, window_size, darker_target, fps)
-#     end
-# end
-#
-# function track2(file, start, stop, target_width, start_location, window_size, darker_target, fps)
-#     ts = range(start, stop; step = 1/fps)
-#     n = length(ts)
-#     t = stop - start
-#     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
-#     ij = openvideo(vid -> _track(vid, n, target_width, start_location, fix_window_size(window_size), darker_target, diagnostic_file), open(cmd), target_format=AV_PIX_FMT_GRAY8)
-#     return ts, CartesianIndex.(ij)
-# end
 
 
 # TODO: if I'm resizeing evrything, might as well track the smaller image, 
@@ -276,4 +191,4 @@ end
 # end
 
 
-end
+    end
