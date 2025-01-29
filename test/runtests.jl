@@ -20,9 +20,9 @@ function spiral(r, nframes, start_ij)
     return [i .- ij[1] .+ start_ij for i in ij]
 end
 
-function build_trajectory(r, framerate, start_ij)
+function build_trajectory(r, fps, start_ij)
     s = 10 # 10 second long test-videos
-    ts = range(0, s, step = 1/framerate)
+    ts = range(0, s, step = 1/fps)
     nframes = length(ts)
     tra = spiral(r, nframes, start_ij)
     return ts, tra
@@ -49,7 +49,7 @@ function split2folders(path, nsegments)
     return folders
 end
 
-function trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect, nsegments)
+function trajectory2video(tra, path, fps, w, h, target_width, darker_target, aspect, nsegments)
     bkgd_c, target_c = darker_target ? (Gray{N0f8}(1), Gray{N0f8}(0)) : (Gray{N0f8}(0), Gray{N0f8}(1))
     blank = fill(Gray{N0f8}(0.5), h, w)
     for (i, ij) in enumerate(tra)
@@ -62,12 +62,12 @@ function trajectory2video(tra, path, framerate, w, h, target_width, darker_targe
         folders = split2folders(path, nsegments)
         files = joinpath.(path, string.(1:nsegments, ".mp4"))
         for (file, folder) in zip(files, folders)
-            run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $framerate -i $(joinpath(folder, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $framerate -pix_fmt yuv420p $file`)
+            run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $fps -i $(joinpath(folder, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $fps -pix_fmt yuv420p $file`)
         end
         return files
     else
         file = joinpath(path, "example.mp4")
-        run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $framerate -i $(joinpath(path, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $framerate -pix_fmt yuv420p $file`)
+        run(`$(FFMPEG_jll.ffmpeg()) -loglevel error -framerate $fps -i $(joinpath(path, "%04d.jpg")) -vf scale=$w2:$h,setsar=$aspect -c:v libx264 -r $fps -pix_fmt yuv420p $file`)
         return file
     end
 end
@@ -91,14 +91,14 @@ function scale(ij::CartesianIndex{2}, aspect)
     (i, round(Int, aspect*j))
 end
 
-function compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+function compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
     mktempdir() do path
         start_ij = location2ij(start_location, h, w)
         # build trajectory
         r = min(min.(start_ij, (h, w) .- start_ij)...)
-        ts1, tra = build_trajectory(0.8r, framerate, start_ij)
+        ts1, tra = build_trajectory(0.8r, fps, start_ij)
         # create a video from the trajectory
-        file = trajectory2video(tra, path, framerate, w, h, target_width, darker_target, aspect, nsegments)
+        file = trajectory2video(tra, path, fps, w, h, target_width, darker_target, aspect, nsegments)
         # track the video
         start_location = if nsegments > 0
             sl = similar(file, Union{Missing, CartesianIndex{2}})
@@ -108,7 +108,7 @@ function compare(framerate, start_location, w, h, target_width, darker_target, a
         else
             fix_start_location(start_location, aspect)
         end
-        ts2, tracked = track(file; start_location, darker_target, diagnostic_file)
+        ts2, tracked = track(file; fps, start_location, darker_target, diagnostic_file)
         if nsegments > 0
             tra = vcat(my_partition(tra, nsegments)...)
         end
@@ -121,45 +121,45 @@ end
 
 @testset "PawsomeTracker.jl" begin
     # defaults
-    framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments = (24, CartesianIndex(50, 50), 100, 100, 10, true, 1, nothing, 0)
+    fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments = (24, CartesianIndex(50, 50), 100, 100, 10, true, 1, nothing, 0)
 
     mktempdir() do temp_path
         @testset "diagnostic file is $diagnostic_file" for diagnostic_file in (nothing, joinpath(temp_path, "test.ts"))
-            ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+            ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
             @test isnothing(diagnostic_file) || isfile(diagnostic_file)
             @test ϵ < 1
         end
     end
 
-    @testset "framerate: $framerate" for framerate in (25, 50)
-        ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+    @testset "framerate: $fps" for fps in (25, 50)
+        ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
         @test ϵ < 1
     end
 
     @testset "darker target: $darker_target" for darker_target in (true, false)
-        ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+        ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
         @test ϵ < 1
     end
 
     @testset "start locationt $start_location" for start_location in (missing, CartesianIndex(60, 50), (50, 60))
-        ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+        ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
         @test ϵ < 1
     end
 
     @testset "target width: $target_width" for target_width in (5, 20)
-        ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+        ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
         @test ϵ < 1
     end
 
     @testset "segmented video files: $nsegments" for nsegments in (0, 1, 3)
-        ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+        ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
         @test ϵ < 1
     end
 
     @testset "width: $w" for w in (100, 150)
         @testset "height: $h" for h in (100, 150)
             @testset "aspect: $aspect" for aspect in (0.5, 1, 1.5)
-                ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+                ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
                 @test ϵ < 1
             end
         end
@@ -169,7 +169,7 @@ end
         n = Threads.nthreads()
         if n > 1
             Threads.@threads for _ in 1:2n # twice the number of threads
-                ϵ = compare(framerate, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+                ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
                 @test ϵ < 1
             end
         else

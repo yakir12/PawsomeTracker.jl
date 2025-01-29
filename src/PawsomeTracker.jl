@@ -1,17 +1,13 @@
 module PawsomeTracker
 
-# using LinearAlgebra
-# using VideoIO, OffsetArrays, ImageFiltering, PaddedViews, StatsBase
-
-using ImageFiltering: ImageFiltering, Kernel, imfilter!, Algorithm, NoPad
-using LinearAlgebra: LinearAlgebra
-using OffsetArrays: centered, OffsetMatrix
-using PaddedViews: PaddedViews, PaddedView
-using StatsBase: StatsBase, mode
-using FFMPEG_jll: ffmpeg, ffprobe
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!, out_frame_size
+using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
+using OffsetArrays: OffsetMatrix
+using PaddedViews: PaddedView
+using StatsBase: mode
+using FFMPEG_jll: ffmpeg
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!
 using ImageDraw: draw!, CirclePointRadius
-using FreeTypeAbstraction: renderstring!, findfont, FTFont
+using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
 using FixedPointNumbers: N0f8
 using ImageTransformations: imresize!
@@ -27,9 +23,6 @@ end
 
 export track
 
-const BW = Matrix{Gray{N0f8}}
-
-include("ffmpeg.jl")
 include("diagnose.jl")
 
 struct Tracker
@@ -92,15 +85,12 @@ function get_start_ij(::Missing, _, target_width, darker_target, img)
     return trckr(trckr.sz .÷ 2)
 end
 
-
-
-
 """
     track(file; start, stop, target_width, start_location, window_size)
 
 Use a Difference of Gaussian (DoG) filter to track a target in a video `file`. 
 - `start`: start tracking after `start` seconds. Defaults to 0.
-- `stop`: stop tracking at `stop` seconds.  Defaults to the full duration of the video.
+- `stop`: stop tracking at `stop` seconds.  Defaults to 86399.999 seconds (24 hours minus one millisecond).
 - `target_width`: the full width of the target (diameter, not radius). It is used as the FWHM of the center Gaussian in the DoG filter. Arbitrarily defaults to 25 pixels.
 - `start_location`: one of the following:
     1. `missing`: the target will be detected in a large (half as large as the frame) window centered at the frame.
@@ -111,18 +101,18 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     1. `NTuple{2}`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
     2. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
-- `fps`: frames per second. Sets how many times the target's location is registered per second. Set to a low number for faster and sparser tracking, but adjust the `window_size` accordingly. Defaults to the actual frame rate of the video.
+- `fps`: frames per second. Sets how many times the target's location is registered per second. Set to a low number for faster and sparser tracking, but adjust the `window_size` accordingly. Defaults to an arbitrary value of 24 frames per second.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
 """
 function track(file::AbstractString; 
         start::Real = 0,
-        stop::Real = get_duration(file),
+        stop::Real = 86399.999,
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2, Int}, CartesianIndex{2}} = missing,
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
-        fps::Real = get_fps(file),
+        fps::Real = 24,
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
 
@@ -138,7 +128,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     indices = Vector{NTuple{2, Int}}(undef, n)
 
     t = stop - start
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -r $fps -preset veryfast -f matroska -`
+    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
 
     frame_index = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
         last_frame::Int = 1
@@ -156,16 +146,23 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
 end
 
+"""
+    track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width, start_location::AbstractVector, window_size)
+
+Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elemants as `files` does. If the second, third, etc elemants in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
+"""
 function track(files::AbstractVector; 
-        start::Union{Real, AbstractVector} = 0,
-        stop::Union{Real, AbstractVector} = get_duration.(files),
+        start::AbstractVector = zeros(length(files)),
+        stop::AbstractVector = fill(86399.999, length(files)),
         target_width::Real = 25,
         start_location::AbstractVector = similar(files, Missing),
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
-        fps::Real = get_fps(files[1]),
+        fps::Real = 24,
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
+
+    @assert length(files) == length(start) == length(stop) == length(start_location) "files, start, stop, and start_location all must have the same length"
 
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)

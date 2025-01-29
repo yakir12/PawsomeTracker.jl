@@ -1,6 +1,6 @@
 struct Diagnose
     label::String
-    buffer::BW
+    buffer::Matrix{Gray{N0f8}}
     color::Gray{N0f8}
     writer::VideoWriter
 
