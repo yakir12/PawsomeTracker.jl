@@ -6,13 +6,14 @@ using PaddedViews: PaddedView
 using StatsBase: mode
 using FFMPEG_jll: ffmpeg
 using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!
-using ImageDraw: draw!, CirclePointRadius
+using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
 using FixedPointNumbers: N0f8
 using ImageTransformations: imresize!
 using RelocatableFolders: @path
 using ComputationalResources: CPUThreads
+using DataStructures: CircularBuffer
 
 const FACE = Ref{FTFont}()
 
@@ -68,21 +69,39 @@ fix_window_size(wh::NTuple{2, Int}) = reverse(wh)
 
 fix_window_size(l::Int) = (l, l)
 
-function get_start_ij(start_index::CartesianIndex{2}, _, _, _, _)
-    return Tuple(start_index)
+function get_guess(start_index::CartesianIndex{2}, _, _)
+    guess = Tuple(start_index)
+    return guess
 end
 
-function get_start_ij(start_xy::NTuple{2, Int}, vid, _, _, _)
+function get_guess(start_xy::NTuple{2, Int}, vid, _)
     sar = aspect_ratio(vid)
     x, y = start_xy
-    return round.(Int, (y, x / sar))
+    guess = round.(Int, (y, x / sar))
+    return guess
 end
 
-function get_start_ij(::Missing, _, target_width, darker_target, img)
+function get_guess(::Missing, _, img)
     sz = size(img)
-    window_size = sz .÷ 4 # this greatly affects processing time!
-    trckr = Tracker(img, target_width, window_size, darker_target) # 0.5 seconds
-    return trckr(trckr.sz .÷ 2)
+    guess = sz .÷ 2
+    return guess
+end
+
+function get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
+    guess = get_guess(start_location, vid, img)
+    trckr = Tracker(img, target_width, window_size, darker_target)
+    ij = trckr(guess)
+    return trckr, ij
+end
+
+function get_start_ij_and_tracker(start_location::Missing, vid, img, target_width, window_size, darker_target)
+    guess = get_guess(start_location, vid, img)
+    sz = size(img)
+    window_size2 = sz .÷ 4 # this greatly affects processing time!
+    trckr = Tracker(img, target_width, window_size2, darker_target) # 0.5 seconds
+    ij = trckr(guess)
+    trckr = Tracker(img, target_width, window_size, darker_target)
+    return trckr, ij
 end
 
 """
@@ -133,8 +152,8 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     frame_index = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
         last_frame::Int = 1
         img = read(vid)
-        indices[1] = get_start_ij(start_location, vid, target_width, darker_target, img)
-        trckr = Tracker(img, target_width, window_size, darker_target)
+        update_ratio!(dia, size(img))
+        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
         while !eof(vid) && last_frame < n
             last_frame += 1
             read!(vid, trckr.img.data)
