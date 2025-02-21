@@ -142,11 +142,12 @@ function track(file::AbstractString;
 end
 
 function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-    ts = range(start, stop; step = 1/fps)
-    n = length(ts)
+    # start and stop are taken as absoluts. To garantee that, `ts` is set using `length` rather then the `step` key-word
+    t = stop - start
+    n = round(Int, fps * t)
+    ts = range(start, stop, n)
     indices = Vector{NTuple{2, Int}}(undef, n)
 
-    t = stop - start
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
 
     frame_index = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
