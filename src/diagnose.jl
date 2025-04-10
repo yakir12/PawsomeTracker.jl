@@ -27,9 +27,9 @@ function (dia::Diagnose)(img, point)
     ij = CartesianIndex(round.(Int, point .* dia.ratio[]))
     push!(dia.trace, ij)
     imresize!(dia.buffer, img)
+    renderstring!(dia.buffer, dia.label, FACE[], 10, 10, 10, halign=:hleft, valign = :vtop)
     draw!(dia.buffer, CirclePointRadius(ij, 2), dia.color)
     draw!(dia.buffer, Path(dia.trace), dia.color)
-    renderstring!(dia.buffer, dia.label, FACE[], 10, 10, 10, halign=:hleft, valign = :vtop)
     write(dia.writer, dia.buffer)
 end
 
