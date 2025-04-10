@@ -8,8 +8,8 @@ A simple, performant, and robust auto-tracker for videos of a single moving targ
 
 ## API
 
-You track a target in a single video file with the `track` function:
-```
+### Single video file
+
     track(file; start, stop, target_width, start_location, window_size)
 
 Use a Difference of Gaussian (DoG) filter to track a target in a video `file`. 
@@ -29,13 +29,13 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
 - `diagnostic_file`: specify a file path to save a diagnostic video showing a low-memory version of the tracking video with the path of the target superimposed on it. Defaults to nothing.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
-```
-Or you can track the same target in multiple consecutive files (e.g. segmented video files) with:
-```
+
+### Multiple consecutive files (e.g. segmented video files)
+
     track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width, start_location::AbstractVector, window_size)
 
 Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elemants as `files` does. If the second, third, etc elemants in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
-```
+
 
 ## Citing
 
