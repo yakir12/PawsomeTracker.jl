@@ -34,7 +34,7 @@ Returns a vector with the time-stamps per frame and a vector of Cartesian indice
 
     track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width, start_location::AbstractVector, window_size)
 
-Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elemants as `files` does. If the second, third, etc elemants in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
+Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elements as `files` does. If the second, third, etc elements in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
 
 
 ## Citing
