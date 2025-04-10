@@ -121,6 +121,7 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     2. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
 - `fps`: frames per second. Sets how many times the target's location is registered per second. Set to a low number for faster and sparser tracking, but adjust the `window_size` accordingly. Defaults to an arbitrary value of 24 frames per second.
+- `diagnostic_file`: specify a file path to save a diagnostic video showing a low-memory version of the tracking video with the path of the target superimposed on it. Defaults to nothing.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
 """
