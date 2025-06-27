@@ -105,7 +105,7 @@ function get_start_ij_and_tracker(start_location::Missing, vid, img, target_widt
 end
 
 """
-    track(file; start, stop, target_width, start_location, window_size)
+    track(file; start, stop, target_width, start_location, window_size, darker_target, fps, diagnostic_file)
 
 Use a Difference of Gaussian (DoG) filter to track a target in a video `file`. 
 - `start`: start tracking after `start` seconds. Defaults to 0.
@@ -168,7 +168,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
 end
 
 """
-    track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width, start_location::AbstractVector, window_size)
+    track(files::AbstractVector; start::AbstractVector, stop::AbstractVector, target_width, start_location::AbstractVector, window_size, darker_target, fps, diagnostic_file)
 
 Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elements as `files` does. If the second, third, etc elements in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
 """
