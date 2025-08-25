@@ -32,6 +32,8 @@ jobs:
           - ubuntu-latest
           - macOS-latest
           - windows-latest
+        arch:
+          - aarch64
         threads:
           - '1'
           - '2'
