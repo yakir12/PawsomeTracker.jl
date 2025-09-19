@@ -60,7 +60,7 @@ function (trckr::Tracker)(guess::NTuple{2, Int})
 end
 
 function guess_window_size(target_width)
-    σ = target_width/2sqrt(log(2))
+    σ = target_width / (2 * sqrt(2 * log(2)))
     l = 4ceil(Int, σ) + 1 # calculates the size of the DoG kernel
     return l
 end
