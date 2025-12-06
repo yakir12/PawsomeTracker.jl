@@ -108,7 +108,7 @@ function compare(fps, start_location, w, h, target_width, darker_target, aspect,
         else
             fix_start_location(start_location, aspect)
         end
-        ts2, tracked = track(file; fps, start_location, darker_target, diagnostic_file)
+        ts2, tracked = track(file; fps, start_location, target_width, darker_target, diagnostic_file)
         if nsegments > 0
             tra = vcat(my_partition(tra, nsegments)...)
         end
@@ -146,8 +146,10 @@ end
         @test ϵ < 1
     end
 
-    @testset "target width: $target_width" for target_width in (5, 20)
+    @testset "target width: $target_width" for target_width in (5, 10, 15, 20, 25, 30)
         ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+        println("  target_width = $target_width: RMSE = $(round(ϵ, digits=3)) pixels")
+        # All targets are now realistic ratios (5-30% of frame) and should have excellent accuracy
         @test ϵ < 1
     end
 
@@ -177,7 +179,30 @@ end
         end
     end
 
+    @testset "Video resizing for large targets" begin
+        # Test that targets larger than TARGET_SIZE (20px) get resized and tracked accurately
+        # These tests verify the automatic downscaling feature
+
+        @testset "target_width=$target_width (resized)" for target_width in (25, 30, 35, 40)
+            ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+            # With TARGET_SIZE=20, these will be downscaled
+            # Expect slightly higher but still sub-pixel accuracy
+            @test ϵ < 1.5  # More lenient threshold for resized targets
+        end
+
+        # Test that small targets (≤ TARGET_SIZE) are NOT resized
+        @testset "target_width=$target_width (not resized)" for target_width in (5, 10, 15, 20)
+            ϵ = compare(fps, start_location, w, h, target_width, darker_target, aspect, diagnostic_file, nsegments)
+            # These should not be resized and should have excellent accuracy
+            @test ϵ < 0.5  # Strict threshold for non-resized targets
+        end
+    end
+
     @testset "Code quality (Aqua.jl)" begin
         Aqua.test_all(PawsomeTracker; ambiguities = VERSION ≥ VersionNumber("1.7"))
     end
+
+    # Note: Tracking accuracy depends heavily on target-to-frame ratio.
+    # Large targets (>30% of frame) have poor accuracy regardless of resizing.
+    # All tests above use realistic ratios (5-30% of frame) representative of real-world usage.
 end

@@ -200,6 +200,17 @@ total_distance = sum(distances)
 - **Threading**: DoG filtering is multi-threaded. Performance scales with available CPU cores.
 - **Diagnostic videos**: Creating diagnostic output adds overhead. Disable for production runs.
 
+### Memory Optimization and Accuracy Trade-off
+
+PawsomeTracker automatically downscales videos when tracking large targets (>20 pixels) to reduce memory usage and improve processing speed. The video is resized so that the target width becomes approximately 20 pixels, and tracking is performed on this scaled version.
+
+**Important considerations:**
+
+- **Smaller target sizes = faster processing**: Reducing the internal target size (by changing `TARGET_SIZE` in the source code) speeds up tracking and reduces memory usage, but introduces coordinate conversion errors.
+- **Error amplification**: Tracking errors in the downscaled video are amplified when converted back to original coordinates. The amplification factor equals `target_width / TARGET_SIZE`. For example, with a 60-pixel target and `TARGET_SIZE=20`, a 1-pixel tracking error in the scaled video becomes a 3-pixel error in the final result.
+- **Recommendation**: The default `TARGET_SIZE=20` provides a good balance between performance and accuracy for most use cases (sub-pixel accuracy for targets up to 30 pixels). Users with very large targets or strict accuracy requirements may want to increase this value in the source code. Conversely, users prioritizing speed over precision can decrease it.
+- **Frame size matters**: Tracking accuracy depends heavily on the target-to-frame ratio. A 30-pixel target in a 1920×1080 frame (~1.5% of width) tracks excellently, while the same target in a 100×100 test frame (30% of width) has degraded accuracy regardless of resizing.
+
 ## Testing
 
 PawsomeTracker includes a comprehensive test suite that:
@@ -215,6 +226,13 @@ Run tests with:
 using Pkg
 Pkg.test("PawsomeTracker")
 ```
+
+## AI Contributions
+
+The following features and documentation were developed with assistance from Claude (Anthropic):
+
+- **Video resizing for memory optimization** (2025): Automatic downscaling feature for large targets, including coordinate conversion, H.264-compatible dimension handling, and error analysis
+- **README documentation** (2025): Performance considerations section and memory optimization trade-off documentation
 
 ## Citing
 

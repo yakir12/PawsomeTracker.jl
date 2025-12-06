@@ -4,7 +4,7 @@ using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
 using StatsBase: mode
-using FFMPEG_jll: ffmpeg
+using FFMPEG_jll: ffmpeg, ffprobe
 using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
@@ -26,14 +26,15 @@ export track
 
 include("diagnose.jl")
 
-struct Tracker
+struct Tracker{T}
     sz::Tuple{Int64, Int64}
     radii::Tuple{Int64, Int64}
     kernel::OffsetMatrix{Float64, Matrix{Float64}}
-    img::PaddedView{Gray{N0f8},2,Tuple{Base.IdentityUnitRange{UnitRange{Int64}},Base.IdentityUnitRange{UnitRange{Int64}}},PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
+    img::T
     buff::OffsetMatrix{Float64, Matrix{Float64}}
+    scale::Float64
 
-    function Tracker(_img, target_width, window_size, darker_target)
+    function Tracker(_img, target_width, window_size, darker_target, scale=1.0)
         sz = size(_img)
         σ = target_width/2sqrt(2log(2))
         direction = darker_target ? -1 : +1
@@ -43,9 +44,9 @@ struct Tracker
         pad_indices = UnitRange.(1 .- h, sz .+ h)
         fillvalue = mode(_img)
         img = PaddedView(fillvalue, _img, pad_indices)
-        _buff = Matrix{Float64}(undef, length.(pad_indices)) 
+        _buff = Matrix{Float64}(undef, length.(pad_indices))
         buff = OffsetMatrix(_buff, pad_indices)
-        return new(sz, radii, kernel, img, buff)
+        return new{typeof(img)}(sz, radii, kernel, img, buff, scale)
     end
 end
 
@@ -142,6 +143,14 @@ function track(file::AbstractString;
     end
 end
 
+function get_video_dimensions(file::AbstractString)
+    # Use ffprobe to get video dimensions without decoding frames
+    result = read(`$(ffprobe()) -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 $file`, String)
+    width_str, height_str = split(strip(result), ',')
+    width, height = parse(Int, width_str), parse(Int, height_str)
+    return (height, width)  # Return as (rows, cols) for Julia convention
+end
+
 function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
     # start and stop are taken as absoluts. To garantee that, `ts` is set using `length` rather then the `step` key-word
     t = stop - start
@@ -149,22 +158,109 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     ts = range(start, stop, n)
     indices = Vector{NTuple{2, Int}}(undef, n)
 
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
+    # Calculate scale factor to make target approximately 20 pixels wide
+    # Only resize when target is larger than 20 pixels
+    TARGET_SIZE = 20.0
+    scale = target_width <= TARGET_SIZE ? 1.0 : TARGET_SIZE / target_width
+
+    # Build ffmpeg command with optional scaling
+    cmd = if scale < 1.0
+        # Get original dimensions using ffprobe
+        original_size = get_video_dimensions(file)
+
+        # Calculate scaled dimensions, ensuring they are even numbers (required for H.264)
+        # and have a minimum size of 8 pixels
+        scaled_size = max.(2 .* round.(Int, original_size .* scale ./ 2), 8)
+
+        # Recalculate actual scale based on enforced dimensions
+        # Use the minimum ratio to ensure we don't over-scale in any dimension
+        scale = minimum(scaled_size ./ original_size)
+
+        scaled_width, scaled_height = scaled_size[2], scaled_size[1]  # ffmpeg uses width:height
+
+        # Add scale filter to ffmpeg command
+        `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps,scale=$scaled_width:$scaled_height -preset veryfast -f matroska -`
+    else
+        original_size = nothing
+        `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
+    end
 
     frame_index = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
         last_frame::Int = 1
         img = read(vid)
-        update_ratio!(dia, size(img))
-        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
-        while !eof(vid) && last_frame < n
-            last_frame += 1
-            read!(vid, trckr.img.data)
-            indices[last_frame] = trckr(indices[last_frame - 1])
-            dia(trckr.img.data, indices[last_frame])
+
+        # Get original size if not already set
+        if isnothing(original_size)
+            original_size = size(img)
+        end
+
+        update_ratio!(dia, original_size)
+
+        if scale >= 1.0
+            # No resizing - use original code path to avoid any coordinate conversion issues
+            trckr, ij = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
+            indices[1] = ij
+
+            while !eof(vid) && last_frame < n
+                last_frame += 1
+                read!(vid, img)
+                ij = trckr(ij)
+                indices[last_frame] = ij
+                dia(img, indices[last_frame])
+            end
+        else
+            # Resizing active - use scaled coordinates
+            scaled_target_width = target_width * scale
+            scaled_window_size = max.(round.(Int, window_size .* scale), (3, 3))
+
+            scaled_start_location = scale_start_location(start_location, scale)
+            trckr, scaled_ij = get_start_ij_and_tracker(scaled_start_location, vid, img, scaled_target_width, scaled_window_size, darker_target)
+
+            # Convert to original coordinates for storage
+            indices[1] = scale_coordinates_back(scaled_ij, scale)
+
+            while !eof(vid) && last_frame < n
+                last_frame += 1
+                read!(vid, img)
+
+                # Track in scaled space
+                scaled_ij = trckr(scaled_ij)
+
+                # Convert to original coordinates for storage
+                indices[last_frame] = scale_coordinates_back(scaled_ij, scale)
+
+                # Diagnostic uses original coordinates
+                dia(img, indices[last_frame])
+            end
         end
         return last_frame
     end
     return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
+end
+
+# Helper functions for coordinate scaling
+function scale_start_location(start_location::CartesianIndex{2}, scale)
+    i, j = Tuple(start_location)
+    return CartesianIndex(round.(Int, (i * scale, j * scale)))
+end
+
+function scale_start_location(start_location::NTuple{2, Int}, scale)
+    x, y = start_location
+    return (round(Int, x * scale), round(Int, y * scale))
+end
+
+function scale_start_location(::Missing, scale)
+    return missing
+end
+
+function scale_coordinates(coords::NTuple{2, Int}, scale)
+    i, j = coords
+    return (round(Int, i * scale), round(Int, j * scale))
+end
+
+function scale_coordinates_back(coords::NTuple{2, Int}, scale)
+    i, j = coords
+    return (round(Int, i / scale), round(Int, j / scale))
 end
 
 """
