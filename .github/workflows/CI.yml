@@ -30,7 +30,7 @@ jobs:
             # - 'nightly'
         os:
           - ubuntu-latest
-          - macOS-14
+          - macOS-latest
           - windows-latest
         arch:
           - x64
