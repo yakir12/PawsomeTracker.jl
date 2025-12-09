@@ -27,6 +27,8 @@ export track
 
 include("diagnose.jl")
 
+get_sigma(target_width) = target_width/2sqrt(2log(2))
+
 struct Tracker
     sz::Tuple{Int64, Int64}
     radii::Tuple{Int64, Int64}
@@ -36,7 +38,7 @@ struct Tracker
 
     function Tracker(_img, target_width, window_size, darker_target)
         sz = size(_img)
-        σ = target_width/2sqrt(2log(2))
+        σ = get_sigma(target_width)
         direction = darker_target ? -1 : +1
         kernel = direction*Kernel.DoG(σ)
         radii = window_size .÷ 2
@@ -60,8 +62,8 @@ function (trckr::Tracker)(guess::NTuple{2, Int})
 end
 
 function guess_window_size(target_width)
-    σ = target_width / (2 * sqrt(2 * log(2)))
-    l = 4ceil(Int, σ) + 1 # calculates the size of the DoG kernel
+    σ = get_sigma(target_width)
+    l = 4ceil(Int, σ) + 1 # calculates the default window size
     return l
 end
 
@@ -193,9 +195,9 @@ function track(files::AbstractVector;
 
     diagnose(diagnostic_file, darker_target) do dia
         end_location = missing
-        for (i, (file, start, stop, start_location)) in enumerate(args)
-            start_location = coalesce(start_location, end_location)
-            tss[i], ijs[i] = track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+        for (i, (f, t_start, t_stop, loc)) in enumerate(args)
+            loc = coalesce(loc, end_location)
+            tss[i], ijs[i] = track_one(f, t_start, t_stop, target_width, loc, window_size, darker_target, fps, dia)
             end_location = ijs[i][end]
         end
     end
