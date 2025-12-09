@@ -143,7 +143,7 @@ function track(file::AbstractString;
 end
 
 function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
-    # start and stop are taken as absoluts. To garantee that, `ts` is set using `length` rather then the `step` key-word
+    # start and stop are taken as absolutes. To guarantee that, `ts` is set using `length` rather than the `step` key-word
     t = stop - start
     n = round(Int, fps * t)
     ts = range(start, stop, n)
@@ -183,7 +183,7 @@ function track(files::AbstractVector;
         diagnostic_file::Union{Nothing, AbstractString} = nothing
     )
 
-    @assert length(files) == length(start) == length(stop) == length(start_location) "files, start, stop, and start_location all must have the same length"
+    @assert length(files) == length(start) == length(stop) == length(start_location) "Array length mismatch: files=$(length(files)), start=$(length(start)), stop=$(length(stop)), start_location=$(length(start_location))"
 
     nfiles = length(files)
     tss = Vector{StepRangeLen{Float64, Base.TwicePrecision{Float64}, Base.TwicePrecision{Float64}, Int64}}(undef, nfiles)
@@ -205,11 +205,5 @@ function track(files::AbstractVector;
 
     return ts, ij
 end
-
-
-# TODO: if I'm resizeing evrything, might as well track the smaller image, 
-
-
-
 
 end
