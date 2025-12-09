@@ -1,3 +1,7 @@
+# Constants for diagnostic video generation
+const DIAGNOSTIC_VIDEO_SIZE = (360, 640)
+const TRACE_BUFFER_SIZE = 100
+
 struct Diagnose
     label::String
     buffer::Matrix{Gray{N0f8}}
@@ -8,11 +12,11 @@ struct Diagnose
 
     function Diagnose(file, darker_target)
         label = first(splitext(basename(file)))
-        buff_sz = (360, 640)
+        buff_sz = DIAGNOSTIC_VIDEO_SIZE
         buffer = Matrix{Gray{N0f8}}(undef, buff_sz...)
         color = darker_target ? Gray{N0f8}(1) : Gray{N0f8}(0)
         writer = open_video_out(file, buffer)
-        trace = CircularBuffer{CartesianIndex{2}}(100)
+        trace = CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE)
         ratio = Ref{NTuple{2, Float64}}()
         new(label, buffer, color, writer, trace, ratio)
     end

@@ -16,6 +16,7 @@ using ComputationalResources: CPUThreads
 using DataStructures: CircularBuffer
 
 const FACE = Ref{FTFont}()
+const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
 
 function __init__()
     assets = @path joinpath(@__DIR__, "../assets")
@@ -52,7 +53,6 @@ end
 function (trckr::Tracker)(guess::NTuple{2, Int})
     window_indices = UnitRange.(guess .- trckr.radii, guess .+ trckr.radii)
     imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
-    # # imfilter!(CPU1(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
     v = view(trckr.buff, window_indices...)
     _, ij = findmax(v)
     guess = getindex.(parentindices(v), Tuple(ij))
@@ -127,7 +127,7 @@ Returns a vector with the time-stamps per frame and a vector of Cartesian indice
 """
 function track(file::AbstractString; 
         start::Real = 0,
-        stop::Real = 86399.999,
+        stop::Real = DEFAULT_MAX_DURATION_SECONDS,
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2, Int}, CartesianIndex{2}} = missing,
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
@@ -174,7 +174,7 @@ Use a Difference of Gaussian (DoG) filter to track a target across multiple vide
 """
 function track(files::AbstractVector; 
         start::AbstractVector = zeros(length(files)),
-        stop::AbstractVector = fill(86399.999, length(files)),
+        stop::AbstractVector = fill(DEFAULT_MAX_DURATION_SECONDS, length(files)),
         target_width::Real = 25,
         start_location::AbstractVector = similar(files, Missing),
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
@@ -211,9 +211,5 @@ end
 
 
 
-# function index2xy(ij::CartesianIndex)
-#     i, j = Tuple(ij)
-#     return (j * VideoIO.aspect_ratio(vid), i)
-# end
 
 end
