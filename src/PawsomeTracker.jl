@@ -118,7 +118,7 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
     2. `CartesianIndex{2}`: the Cartesian index (into the image matrix) indicating where the target is at `start`. Note that when the aspect ratio of the video is not equal to one, this Cartesian index should be to the raw, unscaled, image frame.
     3. `NTuple{2}`: (x, y) where x and y are the horizontal and vertical pixel-distances between the left-top corner of the video-frame and the target at `start`. Note that regardless of the aspect ratio of the video, this coordinate should be to the scaled image frame (what you'd see in a video player).
     Defaults to `missing`.
-- `window_size`: Defaults to a good minimal size that depends on the target width (see `fix_window_size` for details). But can be one of the following:
+- `window_size`: Defaults to a good minimal size that depends on the target width (see `guess_window_size` for details). But can be one of the following:
     1. `NTuple{2}`: a tuple (w, h) where w and h are the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
     2. `Int`: both the width and height of the window (region of interest) in which the algorithm will try to detect the target in the next frame. This should be larger than the `target_width` and relate to how fast the target moves between subsequent frames. 
 - `darker_target`: set to `true` if the target is darker than its background, and vice versa. Defaults to `true`.
