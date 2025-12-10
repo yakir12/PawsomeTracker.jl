@@ -3,6 +3,7 @@
 [![Build Status](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/CI.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/yakir12/PawsomeTracker.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/PawsomeTracker.jl)
 [![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
+[![Code Style: Runic](https://img.shields.io/badge/code%20style-Runic-violet)](https://github.com/fredrikekre/Runic.jl)
 
 A simple, performant, and robust auto-tracker for videos of a single moving target. Uses a [Difference of Gaussian (DoG)](https://en.wikipedia.org/wiki/Difference_of_Gaussians) filter to track the target in the video file.
 
