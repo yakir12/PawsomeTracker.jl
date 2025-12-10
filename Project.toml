@@ -1,7 +1,7 @@
 name = "PawsomeTracker"
 uuid = "d3f98fa6-545d-4d4c-aa39-0a9eb18c40ca"
 authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
-version = "1.2.0"
+version = "1.2.1"
 
 [deps]
 ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
