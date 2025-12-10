@@ -18,23 +18,23 @@ struct Diagnose
         writer = open_video_out(file, buffer)
         trace = CircularBuffer{CartesianIndex{2}}(TRACE_BUFFER_SIZE)
         ratio = Ref{NTuple{2, Float64}}()
-        new(label, buffer, color, writer, trace, ratio)
+        return new(label, buffer, color, writer, trace, ratio)
     end
 end
 diagnose(file::AbstractString, darker_target::Bool) = Diagnose(file, darker_target)
 
 function update_ratio!(dia::Diagnose, sz)
-    dia.ratio[] = size(dia.buffer) ./ sz
+    return dia.ratio[] = size(dia.buffer) ./ sz
 end
 
 function (dia::Diagnose)(img, point)
     ij = CartesianIndex(round.(Int, point .* dia.ratio[]))
     push!(dia.trace, ij)
     imresize!(dia.buffer, img)
-    renderstring!(dia.buffer, dia.label, FACE[], 20, 20, 20, halign=:hleft, valign = :vtop)
+    renderstring!(dia.buffer, dia.label, FACE[], 20, 20, 20, halign = :hleft, valign = :vtop)
     draw!(dia.buffer, CirclePointRadius(ij, 2), dia.color)
     draw!(dia.buffer, Path(dia.trace), dia.color)
-    write(dia.writer, dia.buffer)
+    return write(dia.writer, dia.buffer)
 end
 
 Base.close(dia::Diagnose) = close_video_out!(dia.writer)
@@ -47,7 +47,7 @@ update_ratio!(::Dont, _) = nothing
 
 function diagnose(f, file, darker_target)
     dia = diagnose(file, darker_target)
-    try
+    return try
         f(dia)
     finally
         close(dia)

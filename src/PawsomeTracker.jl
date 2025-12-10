@@ -20,33 +20,33 @@ const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
 
 function __init__()
     assets = @path joinpath(@__DIR__, "../assets")
-    FACE[] = FTFont(joinpath(assets, "TeXGyreHerosMakie-Regular.otf"))
+    return FACE[] = FTFont(joinpath(assets, "TeXGyreHerosMakie-Regular.otf"))
 end
 
 export track
 
 include("diagnose.jl")
 
-get_sigma(target_width) = target_width/2sqrt(2log(2))
+get_sigma(target_width) = target_width / 2sqrt(2log(2))
 
 struct Tracker
     sz::Tuple{Int64, Int64}
     radii::Tuple{Int64, Int64}
     kernel::OffsetMatrix{Float64, Matrix{Float64}}
-    img::PaddedView{Gray{N0f8},2,Tuple{Base.IdentityUnitRange{UnitRange{Int64}},Base.IdentityUnitRange{UnitRange{Int64}}},PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
+    img::PaddedView{Gray{N0f8}, 2, Tuple{Base.IdentityUnitRange{UnitRange{Int64}}, Base.IdentityUnitRange{UnitRange{Int64}}}, PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
     buff::OffsetMatrix{Float64, Matrix{Float64}}
 
     function Tracker(_img, target_width, window_size, darker_target)
         sz = size(_img)
         σ = get_sigma(target_width)
         direction = darker_target ? -1 : +1
-        kernel = direction*Kernel.DoG(σ)
+        kernel = direction * Kernel.DoG(σ)
         radii = window_size .÷ 2
         h = radii .+ size(kernel)
         pad_indices = UnitRange.(1 .- h, sz .+ h)
         fillvalue = mode(_img)
         img = PaddedView(fillvalue, _img, pad_indices)
-        _buff = Matrix{Float64}(undef, length.(pad_indices)) 
+        _buff = Matrix{Float64}(undef, length.(pad_indices))
         buff = OffsetMatrix(_buff, pad_indices)
         return new(sz, radii, kernel, img, buff)
     end
@@ -54,7 +54,7 @@ end
 
 function (trckr::Tracker)(guess::NTuple{2, Int})
     window_indices = UnitRange.(guess .- trckr.radii, guess .+ trckr.radii)
-    imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
+    imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
     v = view(trckr.buff, window_indices...)
     _, ij = findmax(v)
     guess = getindex.(parentindices(v), Tuple(ij))
@@ -127,7 +127,8 @@ Use a Difference of Gaussian (DoG) filter to track a target in a video `file`.
 
 Returns a vector with the time-stamps per frame and a vector of Cartesian indices for the detection index per frame.
 """
-function track(file::AbstractString; 
+function track(
+        file::AbstractString;
         start::Real = 0,
         stop::Real = DEFAULT_MAX_DURATION_SECONDS,
         target_width::Real = 25,
@@ -139,7 +140,7 @@ function track(file::AbstractString;
     )
 
     window_size = fix_window_size(window_size)
-    diagnose(diagnostic_file, darker_target) do dia
+    return diagnose(diagnostic_file, darker_target) do dia
         track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
     end
 end
@@ -153,7 +154,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
 
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
 
-    frame_index = openvideo(open(cmd), target_format=AV_PIX_FMT_GRAY8) do vid
+    frame_index = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8) do vid
         last_frame::Int = 1
         img = read(vid)
         update_ratio!(dia, size(img))
@@ -174,7 +175,8 @@ end
 
 Use a Difference of Gaussian (DoG) filter to track a target across multiple video `files`. `start`, `stop`, and `start_location` all must have the same number of elements as `files` does. If the second, third, etc elements in `start_location` are `missing` then the target is assumed to start where it ended in the previous video (as is the case in segmented videos).
 """
-function track(files::AbstractVector; 
+function track(
+        files::AbstractVector;
         start::AbstractVector = zeros(length(files)),
         stop::AbstractVector = fill(DEFAULT_MAX_DURATION_SECONDS, length(files)),
         target_width::Real = 25,
