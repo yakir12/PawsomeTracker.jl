@@ -1,9 +1,13 @@
 # PawsomeTracker
 
-[![Build Status](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Stable Documentation](https://img.shields.io/badge/docs-stable-blue.svg)](https://yakir12.github.io/PawsomeTracker.jl/stable)
+[![Development documentation](https://img.shields.io/badge/docs-dev-blue.svg)](https://yakir12.github.io/PawsomeTracker.jl/dev)
+[![Test workflow status](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/Test.yml/badge.svg?branch=main)](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/Test.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/yakir12/PawsomeTracker.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/yakir12/PawsomeTracker.jl)
-[![Aqua](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
-[![code style: runic](https://img.shields.io/badge/code_style-%E1%9A%B1%E1%9A%A2%E1%9A%BE%E1%9B%81%E1%9A%B2-black)](https://github.com/fredrikekre/Runic.jl)
+[![Lint workflow Status](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/Lint.yml/badge.svg?branch=main)](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/Lint.yml?query=branch%3Amain)
+[![Docs workflow Status](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/Docs.yml/badge.svg?branch=main)](https://github.com/yakir12/PawsomeTracker.jl/actions/workflows/Docs.yml?query=branch%3Amain)
+[![DOI](https://zenodo.org/badge/DOI/FIXME)](https://doi.org/FIXME)
+[![BestieTemplate](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/JuliaBesties/BestieTemplate.jl/main/docs/src/assets/badge.json)](https://github.com/JuliaBesties/BestieTemplate.jl)
 
 A simple, performant, and robust auto-tracker for videos of a single moving target. Uses a [Difference of Gaussian (DoG)](https://en.wikipedia.org/wiki/Difference_of_Gaussians) filter to track the target in the video file.
 
@@ -217,6 +221,7 @@ using Pkg
 Pkg.test("PawsomeTracker")
 ```
 
-## Citing
+## How to Cite
 
-See [`CITATION.bib`](CITATION.bib) for the relevant reference(s).
+If you use PawsomeTracker.jl in your work, please cite using the reference given in [CITATION.cff](https://github.com/yakir12/PawsomeTracker.jl/blob/main/CITATION.cff).
+

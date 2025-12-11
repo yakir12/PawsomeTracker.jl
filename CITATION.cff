@@ -1,0 +1,28 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: PawsomeTracker.jl
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Yakir Gagnon
+    email: 12.yakir@gmail.com
+identifiers:
+  - type: url
+    value: 'https://github.com/yakir12/PawsomeTracker.jl'
+    description: github repo
+repository-code: 'https://github.com/yakir12/PawsomeTracker.jl'
+abstract: >-
+  A simple, performant, and robust auto-tracker for videos
+  of a single moving target. Uses a Difference of Gaussian
+  (DoG) filter to track the target in the video file.
+keywords:
+  - tracker
+  - video
+license: MIT
+commit: 1.2.2
+version: 1.2.2
+date-released: '2025-12-11'

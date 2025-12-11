@@ -1,0 +1,40 @@
+# Changes here will be overwritten by Copier
+AddAllcontributors: false
+AddCitationCFF: true
+AddCodeOfConduct: false
+AddCompatHelperCI: true
+AddContributionDocs: false
+AddCopierCI: true
+AddDependabot: true
+AddDocs: true
+AddDocsCI: true
+AddFormatterAndLinterConfigFiles: true
+AddGitHubPRTemplate: false
+AddGitHubTemplates: false
+AddLintCI: true
+AddLychee: true
+AddMacToCI: true
+AddPrecommit: false
+AddTagBotCI: true
+AddTestCI: true
+AddWinToCI: true
+Authors: Yakir Gagnon <12.yakir@gmail.com> and contributors
+CheckExplicitImports: true
+ConfigIndentation: 2
+ExplicitImportsChecklist: all
+JuliaIndentation: 4
+JuliaMinCIVersion: lts, 1
+JuliaMinVersion: 1.8 - 1
+License: MIT
+LicenseCopyrightHolders: Yakir Gagnon
+MarkdownIndentation: 2
+PackageName: PawsomeTracker
+PackageOwner: yakir12
+PackageUUID: d3f98fa6-545d-4d4c-aa39-0a9eb18c40ca
+RunJuliaNightlyOnCI: false
+StrategyConfirmIncluded: true
+StrategyLevel: 1
+StrategyReviewExcluded: true
+TestingStrategy: testitem_basic
+UseCirrusCI: false
+_src_path: /home/yakir/.julia/packages/BestieTemplate/53KEa
