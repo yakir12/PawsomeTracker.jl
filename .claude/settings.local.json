@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl log --oneline -20)",
+      "Bash(julia --threads=1 -e:*)",
+      "Bash(julia --threads=1 --project=. -e:*)",
+      "Bash(julia --threads=1 --project=. test:*)",
+      "Bash(julia --threads=1 --project=. test/measure_rmse.jl:*)",
+      "Bash(julia --threads=4 --project=. -e:*)",
+      "Bash(julia --threads=1 --project=. test/test_frame_size.jl:*)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl status)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(julia --threads=1 --project=/home/yakir/Sync/PawsomeTracker.jl -e 'using PawsomeTracker; println(\"Package loaded successfully!\")':*)",
+      "Bash(julia --threads=1 --project=/home/yakir/Sync/PawsomeTracker.jl:*)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl diff Project.toml)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl log --oneline -5)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl add CITATION.bib src/PawsomeTracker.jl src/diagnose.jl)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nImprove code quality: update citation, remove dead code, add named constants\n\n- Updated CITATION.bib with current version (v1.2.0) and year (2025)\n- Removed commented-out dead code from src/PawsomeTracker.jl\n- Added named constants to replace magic numbers:\n  - DEFAULT_MAX_DURATION_SECONDS for 24-hour limit\n  - DIAGNOSTIC_VIDEO_SIZE for video dimensions\n  - TRACE_BUFFER_SIZE for circular buffer size\n\nAll tests passing (39/39).\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl push origin main)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl add:*)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nFix typos and improve code quality\n\n- Fixed spelling errors in comment: \"absoluts\" → \"absolutes\", \"garantee\" → \"guarantee\", \"then\" → \"than\"\n- Improved assertion error message to show actual array lengths for easier debugging\n- Removed incomplete TODO comment with typos (\"resizeing\", \"evrything\")\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nFix documentation errors and improve clarity\n\n- Corrected window size description: \"half as large\" → \"quarter the frame size\" to match actual code (sz ÷ 4)\n- Fixed typo in docstring: \"Defaults to to\" → \"Defaults to\"\n- Improved comment clarity: replaced system-specific timing \"0.5 seconds\" with descriptive \"initial auto-detection pass\"\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nRefactor sigma calculation and fix code clarity issues\n\n- Added get_sigma() helper function to centralize sigma calculation and eliminate code duplication\n- Fixed misleading comment: \"calculates the size of the DoG kernel\" → \"calculates the default window size\"\n- Fixed variable shadowing in loop: renamed loop variables (file, start, stop, start_location) → (f, t_start, t_stop, loc) to avoid shadowing function parameters\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nFix misleading documentation reference\n\n- Corrected docstring reference: \"see fix_window_size\" → \"see guess_window_size\"\n- fix_window_size only converts formats, while guess_window_size actually calculates the default window size\n- This now correctly points users to the function that explains the calculation logic\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(julia --project=@runic-demo -e:*)",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nApply Runic code formatting\n\n- Added explicit return statements to all functions\n- Fixed operator spacing (added spaces around *, /, =)\n- Removed trailing whitespace\n- Improved type annotation spacing (added spaces after commas)\n- Reformatted function signatures for better readability\n\nFormatted with Runic v1.5.1\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl commit -m \"$(cat <<''EOF''\nAdd Runic code style badge to README\n\n- Added violet Runic badge to showcase code formatting standard\n- Placed after Aqua badge in badge row\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>\nDone by Claude under supervision of Yakir Gagnon.\nEOF\n)\")",
+      "Bash(git -C /home/yakir/Sync/PawsomeTracker.jl restore:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
