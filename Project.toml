@@ -1,7 +1,7 @@
 name = "PawsomeTracker"
 uuid = "d3f98fa6-545d-4d4c-aa39-0a9eb18c40ca"
-authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
 version = "1.2.1"
+authors = ["Yakir Gagnon <12.yakir@gmail.com> and contributors"]
 
 [deps]
 ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
@@ -25,7 +25,7 @@ Aqua = "0.8"
 ColorTypes = "0.7, 0.8, 0.9, 0.10, 0.11, 0.12"
 ComputationalResources = "0.3"
 DataStructures = "0.18.20, 0.19"
-FFMPEG_jll = "4.4"
+FFMPEG_jll = "4.4, 6.1.1, 7.1, 8"
 FileIO = "1.16.6"
 FixedPointNumbers = "0.5, 0.6, 0.7, 0.8"
 FreeTypeAbstraction = "0.10"
@@ -41,6 +41,7 @@ RelocatableFolders = "1"
 Statistics = "1"
 StatsBase = "0.24 - 0.34"
 Test = "1"
+TestItemRunner = "1.1.1"
 VideoIO = "1"
 julia = "1.8 - 1"
 
@@ -56,7 +57,8 @@ JpegTurbo = "b835a17e-a41a-41e7-81f0-2f016b05efe0"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["ApproxFun", "Aqua", "ColorTypes", "FFMPEG_jll", "FileIO", "FixedPointNumbers", "ImageDraw", "JpegTurbo", "LinearAlgebra", "Statistics", "Printf", "Test"]
+test = ["ApproxFun", "Aqua", "ColorTypes", "FFMPEG_jll", "FileIO", "FixedPointNumbers", "ImageDraw", "JpegTurbo", "LinearAlgebra", "Statistics", "Printf", "TestItemRunner", "Test"]
