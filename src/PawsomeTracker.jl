@@ -154,20 +154,23 @@ function track_one(file, start, stop, target_width, start_location, window_size,
 
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
 
-    frame_index = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8) do vid
-        last_frame::Int = 1
-        img = read(vid)
-        update_ratio!(dia, size(img))
-        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
-        while !eof(vid) && last_frame < n
-            last_frame += 1
-            read!(vid, trckr.img.data)
-            indices[last_frame] = trckr(indices[last_frame - 1])
-            dia(trckr.img.data, indices[last_frame])
-        end
-        return last_frame
+    vid = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8)
+    last_frame::Int = 1
+    img = read(vid)
+    update_ratio!(dia, size(img))
+    trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
+    # while !eof(vid) && last_frame < n
+    while last_frame < n
+        @show last_frame, n, eof(vid)
+        last_frame += 1
+        read!(vid, trckr.img.data)
+        # indices[last_frame] = trckr(indices[last_frame - 1])
+        # dia(trckr.img.data, indices[last_frame])
     end
-    return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
+    close(vid)
+    @show "done"
+
+    return ts[1:last_frame], CartesianIndex.(indices[1:last_frame])
 end
 
 """
