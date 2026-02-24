@@ -154,6 +154,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
 
     cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
 
+    @show file
     vid = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8)
     last_frame::Int = 1
     img = read(vid)
