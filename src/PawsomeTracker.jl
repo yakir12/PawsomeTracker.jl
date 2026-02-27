@@ -5,7 +5,7 @@ using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
 using StatsBase: mode
 using FFMPEG_jll: ffmpeg
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!, framerate, out_frame_eltype, out_frame_size, skipframes
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
@@ -152,24 +152,21 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     ts = range(start, stop, n)
     indices = Vector{NTuple{2, Int}}(undef, n)
 
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
-
-    @show file
-    vid = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8)
-    last_frame::Int = 1
-    img = read(vid)
-    update_ratio!(dia, size(img))
-    trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
-    # while !eof(vid) && last_frame < n
-    while last_frame < n
-        @show last_frame, n, eof(vid)
-        last_frame += 1
-        read!(vid, trckr.img.data)
-        # indices[last_frame] = trckr(indices[last_frame - 1])
-        # dia(trckr.img.data, indices[last_frame])
+    openvideo(file; target_format = AV_PIX_FMT_GRAY8) do vid
+        skip = round(Int, framerate(vid) / fps) - 1
+        # img = Matrix{out_frame_eltype(vid)}(undef, out_frame_size(vid))
+        img = read(vid)
+        update_ratio!(dia, size(img))
+        seek(vid, start)
+        read!(vid, img) # and do something
+        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
+        for i in 2:n
+            skipframes(vid, skip, throwEOF = false)
+            read!(vid, trckr.img.data)
+            indices[i] = trckr(indices[i - 1])
+            dia(trckr.img.data, indices[i])
+        end
     end
-    close(vid)
-    @show "done"
 
     return ts[1:last_frame], CartesianIndex.(indices[1:last_frame])
 end
