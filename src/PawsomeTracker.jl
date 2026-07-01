@@ -4,19 +4,26 @@ using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
 using StatsBase: mode
-using FFMPEG_jll: ffmpeg
-using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!
+using FFMPEG: exe, ffprobe
+using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!, framerate, skipframes, gettime, get_duration
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
 using ColorTypes: Gray
 using FixedPointNumbers: N0f8
-using ImageTransformations: imresize!
+using ImageTransformations: imresize!, warp
 using RelocatableFolders: @path
 using ComputationalResources: CPUThreads
 using DataStructures: CircularBuffer
+using AprilTags: AprilTagDetector
+using StaticArrays: SVector, push, SMatrix, pop, SDiagonal
+using OpenCV
+using CoordinateTransformations: PerspectiveMap, LinearMap
+using ImageCore: clamp01
+using LinearAlgebra: I
 
 const FACE = Ref{FTFont}()
 const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
+const RowCol = SVector{2, Float32}
 
 function __init__()
     assets = @path joinpath(@__DIR__, "../assets")
@@ -27,7 +34,48 @@ export track
 
 include("diagnose.jl")
 
+function get_framerate(file)
+    vid_fps = openvideo(framerate, file)
+    !isinf(vid_fps) && return vid_fps
+    txt = exe(` -v error -select_streams v:0 -show_entries stream=r_frame_rate -of default=noprint_wrappers=1:nokey=1 $file`, command=ffprobe, collect=true)
+    parse(Rational{Int}, only(txt))
+end
+
 get_sigma(target_width) = target_width / 2sqrt(2log(2))
+
+# struct Tracker4Big
+#     sz::Tuple{Int64, Int64}
+#     radii::Tuple{Int64, Int64}
+#     kernel::OffsetMatrix{Float64, Matrix{Float64}}
+#     img::PaddedView{Gray{N0f8}, 2, Tuple{Base.IdentityUnitRange{UnitRange{Int64}}, Base.IdentityUnitRange{UnitRange{Int64}}}, PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
+#     buff::OffsetMatrix{Float64, Matrix{Float64}}
+#
+#     function Tracker4Big(_img, target_width, window_size, darker_target)
+#         sz = size(_img)
+#         σ = get_sigma(target_width)
+#         direction = darker_target ? -1 : +1
+#         kernel = direction * Kernel.DoG(σ)
+#         radii = window_size .÷ 2
+#         h = radii .+ size(kernel)
+#         pad_indices = UnitRange.(1 .- h, sz .+ h)
+#         fillvalue = mode(_img)
+#         img = PaddedView(fillvalue, _img, pad_indices)
+#         _buff = Matrix{Float64}(undef, length.(pad_indices))
+#         buff = OffsetMatrix(_buff, pad_indices)
+#         return new(sz, radii, kernel, img, buff)
+#     end
+# end
+#
+# function (trckr::Tracker4Big)(guess::NTuple{2, Int})
+#     window_indices = UnitRange.(guess .- trckr.radii, guess .+ trckr.radii)
+#     roi = view(trckr.buff, window_indices...)
+#     imresize!(resized.data, roi)
+#     imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
+#     v = view(trckr.buff, window_indices...)
+#     _, ij = findmax(v)
+#     guess = getindex.(parentindices(v), Tuple(ij))
+#     return min.(max.(guess, (1, 1)), trckr.sz)
+# end
 
 struct Tracker
     sz::Tuple{Int64, Int64}
@@ -35,12 +83,13 @@ struct Tracker
     kernel::OffsetMatrix{Float64, Matrix{Float64}}
     img::PaddedView{Gray{N0f8}, 2, Tuple{Base.IdentityUnitRange{UnitRange{Int64}}, Base.IdentityUnitRange{UnitRange{Int64}}}, PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
     buff::OffsetMatrix{Float64, Matrix{Float64}}
+    white_point::Float64
 
-    function Tracker(_img, target_width, window_size, darker_target)
+    function Tracker(_img, target_width, window_size, darker_target, sar, white_point)
         sz = size(_img)
         σ = get_sigma(target_width)
         direction = darker_target ? -1 : +1
-        kernel = direction * Kernel.DoG(σ)
+        kernel = direction * Kernel.DoG((σ/sar, σ))
         radii = window_size .÷ 2
         h = radii .+ size(kernel)
         pad_indices = UnitRange.(1 .- h, sz .+ h)
@@ -48,12 +97,17 @@ struct Tracker
         img = PaddedView(fillvalue, _img, pad_indices)
         _buff = Matrix{Float64}(undef, length.(pad_indices))
         buff = OffsetMatrix(_buff, pad_indices)
-        return new(sz, radii, kernel, img, buff)
+        return new(sz, radii, kernel, img, buff, white_point)
     end
 end
 
 function (trckr::Tracker)(guess::NTuple{2, Int})
     window_indices = UnitRange.(guess .- trckr.radii, guess .+ trckr.radii)
+
+    if !isone(trckr.white_point)
+        trckr.img.data .= clamp01.(trckr.img.data ./ trckr.white_point)
+    end
+
     imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
     v = view(trckr.buff, window_indices...)
     _, ij = findmax(v)
@@ -67,42 +121,57 @@ function guess_window_size(target_width)
     return l
 end
 
-fix_window_size(wh::NTuple{2, Int}) = reverse(wh)
+function fix_window_size(wh::NTuple{2, Int}) 
+    w, h = wh
+    if !isodd(w)
+        w += 1
+    end
+    if !isodd(h)
+        h += 1
+    end
+    return (h, w)
+end
 
-fix_window_size(l::Int) = (l, l)
+function fix_window_size(l::Int) 
+    if !isodd(l)
+        l += 1
+    end
+    return (l, l)
+end
 
-function get_guess(start_index::CartesianIndex{2}, _, _)
+function get_guess(start_index::CartesianIndex{2}, _, _, _)
     guess = Tuple(start_index)
     return guess
 end
 
-function get_guess(start_xy::NTuple{2, Int}, vid, _)
-    sar = aspect_ratio(vid)
+function get_guess(start_xy::NTuple{2, Int}, vid, _, sar)
     x, y = start_xy
     guess = round.(Int, (y, x / sar))
     return guess
 end
 
-function get_guess(::Missing, _, img)
+function get_guess(::Missing, _, img, _)
     sz = size(img)
     guess = sz .÷ 2
     return guess
 end
 
-function get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
-    guess = get_guess(start_location, vid, img)
-    trckr = Tracker(img, target_width, window_size, darker_target)
+function get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target, _, white_point)
+    sar = aspect_ratio(vid)
+    guess = get_guess(start_location, vid, img, sar)
+    trckr = Tracker(img, target_width, window_size, darker_target, sar, white_point)
     ij = trckr(guess)
     return trckr, ij
 end
 
-function get_start_ij_and_tracker(start_location::Missing, vid, img, target_width, window_size, darker_target)
-    guess = get_guess(start_location, vid, img)
+function get_start_ij_and_tracker(start_location::Missing, vid, img, target_width, window_size, darker_target, initial_search_factor, white_point)
+    sar = aspect_ratio(vid)
+    guess = get_guess(start_location, vid, img, sar)
     sz = size(img)
     window_size2 = sz .÷ 4 # this greatly affects processing time!
-    trckr = Tracker(img, target_width, window_size2, darker_target) # initial auto-detection pass
+    trckr = Tracker(img, target_width, window_size2, darker_target, sar, white_point) # initial auto-detection pass
     ij = trckr(guess)
-    trckr = Tracker(img, target_width, window_size, darker_target)
+    trckr = Tracker(img, target_width, window_size, darker_target, sar, white_point)
     return trckr, ij
 end
 
@@ -130,44 +199,129 @@ Returns a vector with the time-stamps per frame and a vector of Cartesian indice
 function track(
         file::AbstractString;
         start::Real = 0,
-        stop::Real = DEFAULT_MAX_DURATION_SECONDS,
+        stop::Real = get_duration(file),
         target_width::Real = 25,
         start_location::Union{Missing, NTuple{2, Int}, CartesianIndex{2}} = missing,
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
-        fps::Real = 24,
-        diagnostic_file::Union{Nothing, AbstractString} = nothing
+        fps::Real = get_framerate(file),
+        diagnostic_file::Union{Nothing, AbstractString} = nothing,
+        apriltags::Int = 0,
+        initial_search_factor::Real=4,
+        white_point::Real = 1, # clamped linear rescaling
+        calibration = nothing # calibration object
     )
 
     window_size = fix_window_size(window_size)
-    return diagnose(diagnostic_file, darker_target) do dia
-        track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+    # @show window_size
+    return diagnose(diagnostic_file, darker_target, round(Int, (stop - start)*fps), calibration) do dia
+        track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, apriltags, initial_search_factor, white_point)
     end
 end
 
-function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia)
+# function track_one(file, start, stop, target_width, start_location, window_size, darker_target, ::Nothing, dia)
+#     indices = [(1, 1)]
+#
+#     openvideo(file; target_format = AV_PIX_FMT_GRAY8) do vid
+#         img = read(vid)
+#         update_ratio!(dia, size(img))
+#         seek(vid, start)
+#         read!(vid, img) # and do something
+#         trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
+#         while gettime(vid) < stop && !eof(vid)
+#             read!(vid, trckr.img.data)
+#             push!(indices, trckr(indices[end]))
+#             dia(trckr.img.data, indices[end])
+#         end
+#     end
+#     n = length(indices)
+#     ts = range(start, stop, n)
+#
+#     return ts, CartesianIndex.(indices)
+# end
+
+function get_p(tags, n)
+    RowCol.(reverse.(reshape(stack(getfield.(tags, :p)), 4n)))
+end
+
+function findHomography(src, dst, n)
+    # mask = Matrix{Float64}(undef, 3, 3)
+    h, mask = OpenCV.findHomography(OpenCV.Mat(reshape(reinterpret(Float32, src), 2, 4n, 1)), OpenCV.Mat(reshape(reinterpret(Float32, dst), 2, 4n, 1)))#, OpenCV.Mat(reshape(mask, 1, 3, 3)), 2000, 0.995)
+    # h, mask = OpenCV.findHomography(OpenCV.Mat(reshape(reinterpret(Float32, src), 2, 1, 4n)), OpenCV.Mat(reshape(reinterpret(Float32, dst), 2, 1, 4n)), OpenCV.RANSAC, 5.0, OpenCV.Mat(reshape(mask, 1, 3, 3)), 2000, 0.995)
+    SMatrix{3,3}(reshape(h, 3 ,3))'
+end
+
+push1 = Base.Fix2(push, 1)
+
+function track_one(file, start, stop, target_width, start_location, window_size, darker_target, fps, dia, apriltags, initial_search_factor, white_point)
     # start and stop are taken as absolutes. To guarantee that, `ts` is set using `length` rather than the `step` key-word
     t = stop - start
-    n = round(Int, fps * t)
+    n = round(Int, fps * t) + 1
     ts = range(start, stop, n)
     indices = Vector{NTuple{2, Int}}(undef, n)
+    xys = Vector{Union{Missing, RowCol}}(undef, n)
 
-    cmd = `$(ffmpeg()) -loglevel 8 -ss $start -i $file -t $t -vf fps=$fps -preset veryfast -f matroska -`
-
-    frame_index = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8) do vid
-        last_frame::Int = 1
+    openvideo(file; target_format = AV_PIX_FMT_GRAY8) do vid
+        vid_fps = framerate(vid)
+        if isinf(vid_fps)
+            vid_fps = get_framerate(file)
+        end
+        skip = round(Int, vid_fps / fps) - 1
+        # img = Matrix{out_frame_eltype(vid)}(undef, out_frame_size(vid))
         img = read(vid)
         update_ratio!(dia, size(img))
-        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
-        while !eof(vid) && last_frame < n
-            last_frame += 1
-            read!(vid, trckr.img.data)
-            indices[last_frame] = trckr(indices[last_frame - 1])
-            dia(trckr.img.data, indices[last_frame])
+        seek(vid, start)
+        read!(vid, img) # and do something
+        if !iszero(apriltags)
+            detector = AprilTagDetector()
+            tags = detector(collect(img))
+            if length(tags) == apriltags
+                dst = get_p(tags, apriltags)
+                tag = tags[1]
+                H = inv(SMatrix{3,3}(tag.H))
+            else
+                @error "less than $apriltags AprilTags were detected" length(tags)
+            end
         end
-        return last_frame
+        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target, initial_search_factor, white_point)
+        for i in 2:n
+            skipframes(vid, skip, throwEOF = false)
+            if eof(vid)
+                ts = ts[1:i-1]
+                deleteat!(indices, i:n)
+                break
+            end
+            read!(vid, trckr.img.data)
+            indices[i] = trckr(indices[i - 1])
+            dia(trckr.img.data, indices[i])
+            if !iszero(apriltags)
+                tags = detector(collect(trckr.img.data))
+                if length(tags) == apriltags
+                    src = get_p(tags, apriltags)
+                    h = findHomography(src, dst, apriltags)
+                    trans = LinearMap(SDiagonal(96/2, 96/2)) ∘ pop ∘ LinearMap(H) ∘ LinearMap(h) ∘ push1 ∘ RowCol
+                    xys[i] = trans(indices[i])
+                end
+            end
+            # @show i
+        end
     end
-    return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
+    return ts, CartesianIndex.(indices), xys
+
+    # frame_index = openvideo(open(cmd), target_format = AV_PIX_FMT_GRAY8) do vid
+    #     last_frame::Int = 1
+    #     img = read(vid)
+    #     update_ratio!(dia, size(img))
+    #     trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target)
+    #     while !eof(vid) && last_frame < n
+    #         last_frame += 1
+    #         read!(vid, trckr.img.data)
+    #         indices[last_frame] = trckr(indices[last_frame - 1])
+    #         dia(trckr.img.data, indices[last_frame])
+    #     end
+    #     return last_frame
+    # end
+    # return ts[1:frame_index], CartesianIndex.(indices[1:frame_index])
 end
 
 """
@@ -178,13 +332,17 @@ Use a Difference of Gaussian (DoG) filter to track a target across multiple vide
 function track(
         files::AbstractVector;
         start::AbstractVector = zeros(length(files)),
-        stop::AbstractVector = fill(DEFAULT_MAX_DURATION_SECONDS, length(files)),
+        stop::AbstractVector = get_duration.(files),
         target_width::Real = 25,
         start_location::AbstractVector = similar(files, Missing),
         window_size::Union{Int, NTuple{2, Int}} = guess_window_size(target_width),
         darker_target::Bool = true,
-        fps::Real = 24,
-        diagnostic_file::Union{Nothing, AbstractString} = nothing
+        fps::Real = get_framerate(files[1]),
+        diagnostic_file::Union{Nothing, AbstractString} = nothing,
+        apriltags::Int = 0,
+        initial_search_factor::Real = 4,
+        white_point::Real = 1, # clamped linear rescaling
+        calibration = nothing
     )
 
     @assert length(files) == length(start) == length(stop) == length(start_location) "Array length mismatch: files=$(length(files)), start=$(length(start)), stop=$(length(stop)), start_location=$(length(start_location))"
@@ -195,11 +353,11 @@ function track(
     args = tuple.(files, start, stop, start_location)
     window_size = fix_window_size(window_size)
 
-    diagnose(diagnostic_file, darker_target) do dia
+    diagnose(diagnostic_file, darker_target, round(Int, sum(stop .- start)*fps), calibration) do dia
         end_location = missing
         for (i, (f, t_start, t_stop, loc)) in enumerate(args)
             loc = coalesce(loc, end_location)
-            tss[i], ijs[i] = track_one(f, t_start, t_stop, target_width, loc, window_size, darker_target, fps, dia)
+            tss[i], ijs[i] = track_one(f, t_start, t_stop, target_width, loc, window_size, darker_target, fps, dia, apriltags, initial_search_factor, white_point)
             end_location = ijs[i][end]
         end
     end
