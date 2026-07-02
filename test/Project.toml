@@ -1,0 +1,13 @@
+[deps]
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+BasicAutoloads = "09cdc199-4954-42dd-9e0c-2e47e8233053"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+ColorTypes = "3da002f7-5984-5a60-b8a6-cbb66c0b333f"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+FixedPointNumbers = "53c48c17-4a7d-5ca2-90c5-79b7896eea93"
+ImageDraw = "4381153b-2b60-58ae-a1ba-fd683676385f"
+PawsomeTracker = "d3f98fa6-545d-4d4c-aa39-0a9eb18c40ca"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+VideoIO = "d6d074c3-1acf-5d4c-9a43-ef38773959a2"
