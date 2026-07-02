@@ -3,8 +3,8 @@ module PawsomeTracker
 using ImageFiltering: Kernel, imfilter!, Algorithm, NoPad
 using OffsetArrays: OffsetMatrix
 using PaddedViews: PaddedView
-using StatsBase: mode
-using FFMPEG: exe, ffprobe
+using StatsBase: mode, median
+using FFMPEG: exe, ffprobe, ffmpeg
 using VideoIO: openvideo, AV_PIX_FMT_GRAY8, aspect_ratio, open_video_out, VideoWriter, close_video_out!, framerate, skipframes, gettime, get_duration
 using ImageDraw: draw!, CirclePointRadius, Path
 using FreeTypeAbstraction: renderstring!, FTFont
@@ -20,12 +20,35 @@ using OpenCV
 using CoordinateTransformations: PerspectiveMap, LinearMap
 using ImageCore: clamp01
 using LinearAlgebra: I
+using OhMyThreads: tcollect
 
 const FACE = Ref{FTFont}()
 const DEFAULT_MAX_DURATION_SECONDS = 86399.999  # 24 hours minus 1 millisecond
 const RowCol = SVector{2, Float32}
 
+# Global limiter on concurrent ffmpeg reads, shared by every `_frame_at` call (and thus by
+# VerifyCalibrations, which reads through `Rectifications.get_corners`). Bounds simultaneous
+# opens against the (CIFS/network) share so a burst of nested `tmap` tasks can't trip EAGAIN
+# ("Resource temporarily unavailable"). A single global limiter is what composes across the
+# nested tmaps — per-call `ntasks` limits would multiply. Tune via `set_read_limit!` or the
+# `RECTIFICATIONS_READ_LIMIT` env var (read at `__init__`).
+const READ_SEM = Ref{Base.Semaphore}()
+set_read_limit!(n::Integer) = (READ_SEM[] = Base.Semaphore(n); Int(n))
+read_limit() = READ_SEM[].sem_size
+
+# ffmpeg/ffprobe commands are built by interpolating the *called* `FFMPEG.ffmpeg()` /
+# `FFMPEG.ffprobe()` (the non-do-block form): each returns a `Cmd` with the absolute executable
+# path and the adjusted `PATH`/`LD_LIBRARY_PATH` baked in via `setenv`, and that env survives
+# interpolation into the surrounding `Cmd`. Unlike the deprecated `ffmpeg() do ... end` form it
+# never mutates the process-global `ENV`, so it composes safely under the nested `tmap`
+# concurrency — no snapshot, no `addenv`, no env race (which previously grew `LD_LIBRARY_PATH`
+# without bound until a spawn died with E2BIG). See `_cmd` / `_probe`.
+
 function __init__()
+    # Concurrency is bounded only by the share itself; benchmarks against the CIFS mount plateau
+    # around 12-24 concurrent reads (vs ~6 here historically).
+    set_read_limit!(parse(Int, get(ENV, "RECTIFICATIONS_READ_LIMIT", "12")))
+
     assets = @path joinpath(@__DIR__, "../assets")
     return FACE[] = FTFont(joinpath(assets, "TeXGyreHerosMakie-Regular.otf"))
 end
@@ -33,6 +56,44 @@ end
 export track
 
 include("diagnose.jl")
+
+
+function _get_wh(file)
+    s = read(`$(ffprobe()) -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 $file`, String)
+    w, h = split(strip(s), ',')
+    return (parse(Int, w), parse(Int, h))
+end
+
+# Read one frame, retrying transient failures. EAGAIN ("Resource temporarily unavailable") from
+# the CIFS share is transient by definition, so a few backoff retries ride out residual blips even
+# under the concurrency limit. A persistent failure still rethrows after the last try.
+function _read_frame(cmd; tries = 4)
+    for i in 1:tries
+        try
+            return read(cmd)
+        catch e
+            i == tries && rethrow()
+            sleep(0.2 * 2^(i - 1))          # 0.2s, 0.4s, 0.8s backoff
+        end
+    end
+end
+
+_cmd(file, t) = `$(ffmpeg()) -hide_banner -loglevel error -ss $t -i $file -frames:v 1 -f rawvideo -pix_fmt gray pipe:1`
+
+function _frame_at(file, t, w, h)
+
+    cmd = _cmd(file, t)
+    buf = Base.acquire(() -> _read_frame(cmd), READ_SEM[])   # bound concurrent opens against the share
+    return float.(permutedims(reshape(buf, w, h)))
+end
+
+function get_bkgd(file, start, stop)
+    w, h = _get_wh(file)
+    n = 20
+    ts = range(start, stop, length = n)
+    imgs = tcollect(_frame_at(file, t, w, h) for t in ts)
+    dropdims(median(stack(imgs); dims=3); dims=3)
+end
 
 function get_framerate(file)
     vid_fps = openvideo(framerate, file)
@@ -77,6 +138,7 @@ get_sigma(target_width) = target_width / 2sqrt(2log(2))
 #     return min.(max.(guess, (1, 1)), trckr.sz)
 # end
 
+
 struct Tracker
     sz::Tuple{Int64, Int64}
     radii::Tuple{Int64, Int64}
@@ -84,8 +146,9 @@ struct Tracker
     img::PaddedView{Gray{N0f8}, 2, Tuple{Base.IdentityUnitRange{UnitRange{Int64}}, Base.IdentityUnitRange{UnitRange{Int64}}}, PermutedDimsArray{Gray{N0f8}, 2, (2, 1), (2, 1), Matrix{Gray{N0f8}}}}
     buff::OffsetMatrix{Float64, Matrix{Float64}}
     white_point::Float64
+    bkgd
 
-    function Tracker(_img, target_width, window_size, darker_target, sar, white_point)
+    function Tracker(_img, target_width, window_size, darker_target, sar, white_point, bkgd)
         sz = size(_img)
         σ = get_sigma(target_width)
         direction = darker_target ? -1 : +1
@@ -97,7 +160,7 @@ struct Tracker
         img = PaddedView(fillvalue, _img, pad_indices)
         _buff = Matrix{Float64}(undef, length.(pad_indices))
         buff = OffsetMatrix(_buff, pad_indices)
-        return new(sz, radii, kernel, img, buff, white_point)
+        return new(sz, radii, kernel, img, buff, white_point, bkgd)
     end
 end
 
@@ -107,6 +170,8 @@ function (trckr::Tracker)(guess::NTuple{2, Int})
     if !isone(trckr.white_point)
         trckr.img.data .= clamp01.(trckr.img.data ./ trckr.white_point)
     end
+
+    # trckr.img.data[window_indices...] .-= trckr.bkgd[window_indices...]
 
     imfilter!(CPUThreads(Algorithm.FIR()), trckr.buff, trckr.img, trckr.kernel, NoPad(), window_indices)
     v = view(trckr.buff, window_indices...)
@@ -156,22 +221,22 @@ function get_guess(::Missing, _, img, _)
     return guess
 end
 
-function get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target, _, white_point)
+function get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target, _, white_point, bkgd)
     sar = aspect_ratio(vid)
     guess = get_guess(start_location, vid, img, sar)
-    trckr = Tracker(img, target_width, window_size, darker_target, sar, white_point)
+    trckr = Tracker(img, target_width, window_size, darker_target, sar, white_point, bkgd)
     ij = trckr(guess)
     return trckr, ij
 end
 
-function get_start_ij_and_tracker(start_location::Missing, vid, img, target_width, window_size, darker_target, initial_search_factor, white_point)
+function get_start_ij_and_tracker(start_location::Missing, vid, img, target_width, window_size, darker_target, initial_search_factor, white_point, bkgd)
     sar = aspect_ratio(vid)
     guess = get_guess(start_location, vid, img, sar)
     sz = size(img)
     window_size2 = sz .÷ 4 # this greatly affects processing time!
-    trckr = Tracker(img, target_width, window_size2, darker_target, sar, white_point) # initial auto-detection pass
+    trckr = Tracker(img, target_width, window_size2, darker_target, sar, white_point, bkgd) # initial auto-detection pass
     ij = trckr(guess)
-    trckr = Tracker(img, target_width, window_size, darker_target, sar, white_point)
+    trckr = Tracker(img, target_width, window_size, darker_target, sar, white_point, bkgd)
     return trckr, ij
 end
 
@@ -261,6 +326,8 @@ function track_one(file, start, stop, target_width, start_location, window_size,
     indices = Vector{NTuple{2, Int}}(undef, n)
     xys = Vector{Union{Missing, RowCol}}(undef, n)
 
+    bkgd = get_bkgd(file, start, stop)
+
     openvideo(file; target_format = AV_PIX_FMT_GRAY8) do vid
         vid_fps = framerate(vid)
         if isinf(vid_fps)
@@ -283,7 +350,7 @@ function track_one(file, start, stop, target_width, start_location, window_size,
                 @error "less than $apriltags AprilTags were detected" length(tags)
             end
         end
-        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target, initial_search_factor, white_point)
+        trckr, indices[1] = get_start_ij_and_tracker(start_location, vid, img, target_width, window_size, darker_target, initial_search_factor, white_point, bkgd)
         for i in 2:n
             skipframes(vid, skip, throwEOF = false)
             if eof(vid)
